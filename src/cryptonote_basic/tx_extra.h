@@ -34,7 +34,6 @@
 #include "serialization/binary_archive.h"
 #include "serialization/variant.h"
 #include "crypto/crypto.h"
-#include <boost/variant.hpp>
 #include "lns.h"
 #include "cryptonote_basic.h"
 
@@ -552,7 +551,8 @@ namespace cryptonote
   //   varint tag;
   //   varint size;
   //   varint data[];
-  typedef boost::variant<tx_extra_padding,
+  using tx_extra_field = std::variant<
+                         tx_extra_padding,
                          tx_extra_pub_key,
                          tx_extra_nonce,
                          tx_extra_merge_mining_tag,
@@ -569,7 +569,7 @@ namespace cryptonote
                          tx_extra_tx_key_image_unlock,
                          tx_extra_burn,
                          tx_extra_guus_name_system
-                        > tx_extra_field;
+                        >;
 }
 
 BLOB_SERIALIZER(cryptonote::tx_extra_frame_pix_deregister_old::vote);

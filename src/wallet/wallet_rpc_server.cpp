@@ -56,6 +56,7 @@ using namespace epee;
 #include "rpc/core_rpc_server.h"
 #include "daemonizer/daemonizer.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "serialization/boost_std_variant.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "wallet.rpc"

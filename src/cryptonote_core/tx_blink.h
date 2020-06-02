@@ -33,7 +33,7 @@
 #include "frame_pix_rules.h"
 #include <iostream>
 #include <shared_mutex>
-#include <boost/thread/shared_mutex.hpp>
+#include <variant>
 
 namespace frame_pixs {
 class frame_pix_list;
@@ -53,7 +53,7 @@ public:
     /// transaction was created.
     const uint64_t height;
 
-    class tx_hash_visitor : public boost::static_visitor<crypto::hash> {
+    class tx_hash_visitor {
     public:
         crypto::hash operator()(const crypto::hash &h) const { return h; }
         crypto::hash operator()(const transaction &tx) const;
@@ -62,10 +62,10 @@ public:
     /// The blink transaction *or* hash.  The transaction is present when building a blink tx for
     /// blink quorum signing; for regular blink txes received via p2p this will contain the hash
     /// instead.
-    boost::variant<transaction, crypto::hash> tx;
+    std::variant<transaction, crypto::hash> tx;
 
     /// Returns the transaction hash
-    crypto::hash get_txhash() const { return boost::apply_visitor(tx_hash_visitor{}, tx); }
+    crypto::hash get_txhash() const { return std::visit(tx_hash_visitor{}, tx); }
 
     class signature_verification_error : public std::runtime_error {
         using std::runtime_error::runtime_error;

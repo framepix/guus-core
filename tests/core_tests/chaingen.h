@@ -39,8 +39,6 @@
 #include <boost/program_options.hpp>
 #include <boost/optional.hpp>
 #include <boost/serialization/vector.hpp>
-#include <boost/serialization/variant.hpp>
-#include <boost/serialization/optional.hpp>
 
 #include "include_base_utils.h"
 #include "common/boost_serialization_helper.h"
@@ -52,6 +50,8 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
+#include "serialization/boost_std_variant.h"
+#include "serialization/boost_std_optional.h"
 #include "misc_language.h"
 
 #include "blockchain_db/testdb.h"
@@ -225,7 +225,7 @@ VARIANT_TAG(binary_archive, serialized_transaction, 0xce);
 VARIANT_TAG(binary_archive, event_visitor_settings, 0xcf);
 VARIANT_TAG(binary_archive, event_replay_settings, 0xda);
 
-typedef boost::variant<cryptonote::block,
+typedef   std::variant<cryptonote::block,
                        cryptonote::transaction,
                        std::vector<cryptonote::transaction>,
                        cryptonote::account_base,
@@ -455,7 +455,7 @@ typedef std::unordered_map<output_hasher, output_index, output_hasher_hasher> ma
 typedef std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses_t;
 typedef std::pair<uint64_t, size_t>  outloc_t;
 
-typedef boost::variant<cryptonote::account_public_address, cryptonote::account_keys, cryptonote::account_base, cryptonote::tx_destination_entry> var_addr_t;
+typedef std::variant<cryptonote::account_public_address, cryptonote::account_keys, cryptonote::account_base, cryptonote::tx_destination_entry> var_addr_t;
 cryptonote::account_public_address get_address(const var_addr_t& inp);
 
 typedef struct {
@@ -592,7 +592,7 @@ bool extract_hard_forks(const std::vector<test_event_entry>& events, v_hardforks
 /*                                                                      */
 /************************************************************************/
 template<class t_test_class>
-struct push_core_event_visitor: public boost::static_visitor<bool>
+struct push_core_event_visitor
 {
 private:
   cryptonote::core& m_c;
@@ -889,9 +889,9 @@ inline bool replay_events_through_core_plain(cryptonote::core& cr, const std::ve
 
   //init core here
   if (reinit) {
-    CHECK_AND_ASSERT_MES(typeid(cryptonote::block) == events[0].type(), false,
+    CHECK_AND_ASSERT_MES(std::holds_alternative<cryptonote::block>(events[0]), false,
                          "First event must be genesis block creation");
-    cr.set_genesis_block(boost::get<cryptonote::block>(events[0]));
+    cr.set_genesis_block(std::get<cryptonote::block>(events[0]));
   }
 
   bool r = true;
@@ -899,7 +899,7 @@ inline bool replay_events_through_core_plain(cryptonote::core& cr, const std::ve
   for(size_t i = 1; i < events.size() && r; ++i)
   {
     visitor.event_index(i);
-    r = boost::apply_visitor(visitor, events[i]);
+    r = std::visit(visitor, events[i]);
   }
 
   return r;

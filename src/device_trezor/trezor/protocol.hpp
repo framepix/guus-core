@@ -166,7 +166,7 @@ namespace tx {
   std::string hash_addr(const ::crypto::public_key * spend_key, const ::crypto::public_key * view_key, boost::optional<uint64_t> amount = boost::none, boost::optional<bool> is_subaddr = boost::none);
   ::crypto::secret_key compute_enc_key(const ::crypto::secret_key & private_view_key, const std::string & aux, const std::string & salt);
 
-  typedef boost::variant<rct::rangeSig, rct::Bulletproof> rsig_v;
+  using rsig_v = std::variant<rct::rangeSig, rct::Bulletproof>;
 
   /**
    * Transaction signer state holder.
