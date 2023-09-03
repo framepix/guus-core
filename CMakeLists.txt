@@ -27,6 +27,9 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 list(INSERT CMAKE_MODULE_PATH 0
   "${CMAKE_SOURCE_DIR}/cmake")
 include(CheckCCompilerFlag)
@@ -39,11 +42,43 @@ if (IOS)
     INCLUDE(CmakeLists_IOS.txt)
 endif()
 
-cmake_minimum_required(VERSION 3.7)
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  foreach(lang C CXX)
+    if(NOT DEFINED CMAKE_${lang}_COMPILER_LAUNCHER AND NOT CMAKE_${lang}_COMPILER MATCHES ".*/ccache")
+      message(STATUS "Enabling ccache for ${lang}")
+      set(CMAKE_${lang}_COMPILER_LAUNCHER ${CCACHE_PROGRAM} CACHE STRING "")
+    endif()
+  endforeach()
+endif()
+
+cmake_minimum_required(VERSION 3.10)
 message(STATUS "CMake version ${CMAKE_VERSION}")
 
-set(HUNTER_ENABLED OFF)
-project(guus)
+
+project(guus
+    VERSION 13.1.1
+    LANGUAGES CXX C)
+set(SISPOP_RELEASE_CODENAME "Victory Reset")
+
+# String value to append to the full version string; this is intended to easily identify whether a
+# binary was build from the release or development branches.  This should be permanently set to an
+# empty string on `master`, "-dev" on the `dev` branch, and can be set externally (via cmake
+# arguments) where it makes sense to take some other branch release with an extra value.
+if(NOT DEFINED SISPOP_RELEASE_SUFFIX)
+  set(SISPOP_RELEASE_SUFFIX "-dev")
+endif()
+
+if(POLICY CMP0079)
+  cmake_policy(SET CMP0079 NEW)
+endif()
+
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 
 function (add_c_flag_if_supported flag var)
   string(REPLACE "-" "_" supported ${flag}_c)
@@ -104,7 +139,32 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
   message(STATUS "Setting default build type: ${CMAKE_BUILD_TYPE}")
 endif()
-string(TOLOWER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_LOWER)
+
+cmake_policy(SET CMP0069 NEW)
+SET(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
+if(CMAKE_BUILD_TYPE STREQUAL Release AND NOT MINGW)
+  set(USE_LTO_DEFAULT ON)
+else()
+  set(USE_LTO_DEFAULT OFF)
+endif()
+option(USE_LTO "Use Link-Time Optimization" ${USE_LTO_DEFAULT})
+
+if(USE_LTO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT IPO_ENABLED OUTPUT ipo_error)
+  if(IPO_ENABLED)
+    message(STATUS "LTO enabled")
+  else()
+    message(WARNING "LTO not supported by compiler: ${ipo_error}")
+  endif()
+else()
+  message(STATUS "LTO disabled")
+  set(IPO_ENABLED OFF)
+endif()
+
+if(IPO_ENABLED AND NOT DEFINED CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+endif()
 
 # On Darwin, ensure the user-defined paths are used to find PCSC
 # before falling back to the system frameworks.
@@ -187,8 +247,16 @@ else()
   message(STATUS "Building without build tag")
 endif()
 
+enable_testing()
+
+option(BUILD_DOCUMENTATION "Build the Doxygen documentation." ON)
+option(BUILD_TESTS "Build tests." OFF)
+if (BUILD_TESTS)
+  add_definitions(-DUNIT_TEST)
+endif()
+
+find_package(Git)
 if(NOT MANUAL_SUBMODULES)
-  find_package(Git)
   if(GIT_FOUND)
     function (check_submodule relative_path)
       execute_process(COMMAND git rev-parse "HEAD" WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/${relative_path} OUTPUT_VARIABLE localHead)
@@ -217,6 +285,9 @@ if(NOT MANUAL_SUBMODULES)
     check_submodule(external/trezor-common)
     check_submodule(external/randomx)
     check_submodule(external/loki-mq mapbox-variant cppzmq)
+    if(BUILD_TESTS)
+      check_submodule(external/googletest)
+    endif()
   endif()
 endif()
 
@@ -226,29 +297,9 @@ option(PER_BLOCK_CHECKPOINT "Enables per-block checkpointing" ON)
 list(INSERT CMAKE_MODULE_PATH 0
   "${CMAKE_SOURCE_DIR}/cmake")
 
-if (NOT DEFINED ENV{DEVELOPER_LOCAL_TOOLS})
-  message(STATUS "Could not find DEVELOPER_LOCAL_TOOLS in env (not required)")
-  set(BOOST_IGNORE_SYSTEM_PATHS_DEFAULT OFF)
-elseif ("$ENV{DEVELOPER_LOCAL_TOOLS}" EQUAL 1)
-  message(STATUS "Found: env DEVELOPER_LOCAL_TOOLS = 1")
-  set(BOOST_IGNORE_SYSTEM_PATHS_DEFAULT ON)
-else()
-  message(STATUS "Found: env DEVELOPER_LOCAL_TOOLS = 0")
-  set(BOOST_IGNORE_SYSTEM_PATHS_DEFAULT OFF)
-endif()
-
-message(STATUS "BOOST_IGNORE_SYSTEM_PATHS defaults to ${BOOST_IGNORE_SYSTEM_PATHS_DEFAULT}")
-option(BOOST_IGNORE_SYSTEM_PATHS "Ignore boost system paths for local boost installation" ${BOOST_IGNORE_SYSTEM_PATHS_DEFAULT})
-#guus end
+option(BOOST_IGNORE_SYSTEM_PATHS "Ignore boost system paths for local boost installation" OFF)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-enable_testing()
-
-option(BUILD_DOCUMENTATION "Build the Doxygen documentation." ON)
-option(BUILD_TESTS "Build tests." OFF)
-if (BUILD_TESTS)
-  add_definitions(-DUNIT_TEST)
-endif()
 
 # Check whether we're on a 32-bit or 64-bit system
 if(CMAKE_SIZEOF_VOID_P EQUAL "8")
@@ -297,12 +348,22 @@ if(APPLE)
   endif()
 endif()
 
-if(MSVC OR MINGW)
+option(BUILD_STATIC_DEPS "Download, build and statically link against core dependencies" OFF)
+if(BUILD_STATIC_DEPS)
+  include(StaticBuild)
+endif()
+
+if(MSVC OR MINGW OR BUILD_STATIC_DEPS)
   set(DEFAULT_STATIC true)
 else()
   set(DEFAULT_STATIC false)
 endif()
-option(STATIC "Try to link external libraries statically, where possible" ${DEFAULT_STATIC})
+option(STATIC "Try to link external dependencies statically, where possible" ${DEFAULT_STATIC})
+
+if(BUILD_STATIC_DEPS AND NOT STATIC)
+  message(FATAL_ERROR "Option BUILD_STATIC_DEPS requires STATIC be enabled as well")
+endif()
+
 option(BUILD_SHARED_LIBS "Build shared internal libraries" OFF)
 set(PIC_FLAG "-fPIC")
 
@@ -361,7 +422,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads)
 
 if (APPLE AND NOT IOS)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=x86-64 -fvisibility=default -std=c++14")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=x86-64 -fvisibility=default")
   if (NOT OpenSSL_DIR)
       EXECUTE_PROCESS(COMMAND brew --prefix openssl
         OUTPUT_VARIABLE OPENSSL_ROOT_DIR
@@ -370,7 +431,11 @@ if (APPLE AND NOT IOS)
   endif()
 endif()
 
-find_package(OpenSSL REQUIRED)
+if(BUILD_STATIC_DEPS)
+  # SSL::* targets already set up
+else()
+  find_package(OpenSSL REQUIRED)
+endif()
 message(STATUS "Using OpenSSL include dir at ${OPENSSL_INCLUDE_DIR}")
 
 if(MINGW)
@@ -383,43 +448,55 @@ add_definition_if_library_exists(c explicit_bzero "strings.h" HAVE_EXPLICIT_BZER
 add_definition_if_function_found(strptime HAVE_STRPTIME)
 
 # Generate header for embedded translations
-# Generate header for embedded translations, use target toolchain if depends, otherwise use the
-# lrelease and lupdate binaries from the host
-include(ExternalProject)
-ExternalProject_Add(generate_translations_header
-  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/translations"
-  BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/translations"
-  STAMP_DIR ${LRELEASE_PATH}
-  CMAKE_ARGS -DLRELEASE_PATH=${LRELEASE_PATH}
-  INSTALL_COMMAND cmake -E echo "")
+add_subdirectory(translations)
 
-if(POLICY CMP0079)
-  cmake_policy(SET CMP0079 NEW)
-endif()
-add_library(libunbound INTERFACE)
 add_library(miniupnpc INTERFACE)
+add_library(systemd INTERFACE)  # Will do nothing unless we find and enable systemd support
 
+if(NOT TARGET sodium)
 # Allow -D DOWNLOAD_SODIUM=FORCE to download without even checking for a local libsodium
-option(DOWNLOAD_SODIUM "Allow libsodium to be downloaded and built locally if not found on the system" OFF)
-if(NOT DOWNLOAD_SODIUM MATCHES "FORCE")
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(SODIUM libsodium>=1.0.9 IMPORTED_TARGET)
-endif()
-
-add_library(sodium INTERFACE)
-if(SODIUM_FOUND AND NOT DOWNLOAD_SODIUM MATCHES "FORCE")
-  target_link_libraries(sodium INTERFACE PkgConfig::SODIUM)
-else()
-  if(NOT DOWNLOAD_SODIUM)
-    message(FATAL_ERROR "Could not find libsodium >= 1.0.9; either install it on your system or use -DDOWNLOAD_SODIUM=ON to download and build an internal copy")
+  option(DOWNLOAD_SODIUM "Allow libsodium to be downloaded and built locally if not found on the system" OFF)
+  if(NOT DOWNLOAD_SODIUM STREQUAL "FORCE" AND NOT BUILD_STATIC_DEPS)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SODIUM libsodium>=1.0.9 IMPORTED_TARGET)
   endif()
-  message(STATUS "Sodium >= 1.0.9 not found, but DOWNLOAD_SODIUM specified, so downloading it")
-  include(DownloadLibSodium)
-  target_link_libraries(sodium INTERFACE sodium_vendor)
+
+  add_library(sodium INTERFACE)
+  if(SODIUM_FOUND AND NOT DOWNLOAD_SODIUM STREQUAL "FORCE" AND NOT BUILD_STATIC_DEPS)
+    target_link_libraries(sodium INTERFACE PkgConfig::SODIUM)
+  else()
+    if(NOT DOWNLOAD_SODIUM AND NOT BUILD_STATIC_DEPS)
+      message(FATAL_ERROR "Could not find libsodium >= 1.0.9; either install it on your system or use -DDOWNLOAD_SODIUM=ON to download and build an internal copy")
+    endif()
+    message(STATUS "Sodium >= 1.0.9 not found, but DOWNLOAD_SODIUM specified, so downloading it")
+    include(DownloadLibSodium)
+    target_link_libraries(sodium INTERFACE sodium_vendor)
+  endif()
+
+  # Need this target export so that sispop-mq properly picks up sodium
+  export(TARGETS sodium NAMESPACE sodium:: FILE sodium-exports.cmake)
 endif()
 
-export(TARGETS sodium NAMESPACE sodium:: FILE sodium-exports.cmake)
-install(TARGETS sodium EXPORT sodiumConfig DESTINATION ${CMAKE_INSTALL_LIBDIR})
+if (NOT BUILD_STATIC_DEPS)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(UNBOUND libunbound REQUIRED IMPORTED_TARGET)
+  add_library(libunbound INTERFACE)
+  target_link_libraries(libunbound INTERFACE PkgConfig::UNBOUND)
+endif()
+
+option(WITH_SYSTEMD "Attempts to link against and enable systemd daemon notification support" ON)
+if (WITH_SYSTEMD AND NOT BUILD_STATIC_DEPS)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(SYSTEMD libsystemd IMPORTED_TARGET)
+
+    if(SYSTEMD_FOUND)
+      target_compile_definitions(systemd INTERFACE ENABLE_SYSTEMD)
+      target_link_libraries(systemd INTERFACE PkgConfig::SYSTEMD)
+    else()
+      message(WARNING "systemd not found; building without systemd support (use -DWITH_SYSTEMD=OFF to suppress this warning)")
+    endif()
+endif()
+
 
 add_subdirectory(external)
 
@@ -479,7 +556,7 @@ else()
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${ARCH_FLAG}")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ARCH_FLAG}")
 
-  set(WARNINGS "-Wall -Wextra -Wpointer-arith -Wundef -Wvla -Wwrite-strings -Wno-error=extra -Wno-error=deprecated-declarations -Wno-unused-parameter -Wno-unused-variable -Wno-error=unused-variable -Wno-error=undef -Wno-error=uninitialized")
+  set(WARNINGS "-Wall -Wextra -Wpointer-arith -Wvla -Wwrite-strings -Wno-error=extra -Wno-error=deprecated-declarations -Wno-unused-parameter -Wno-unused-variable -Wno-error=unused-variable -Wno-error=uninitialized")
 
   option(WARNINGS_AS_ERRORS "Enable warning as errors" OFF)
   if(NOT MINGW AND WARNINGS_AS_ERRORS)
@@ -491,15 +568,13 @@ else()
       set(WARNINGS "${WARNINGS} -Wno-error=inline-asm")
     endif()
   else()
-    set(WARNINGS "${WARNINGS} -Wlogical-op -Wno-error=maybe-uninitialized -Wno-error=cpp -Wno-error=logical-op")
+    set(WARNINGS "${WARNINGS} -Wlogical-op -Wno-error=maybe-uninitialized -Wno-error=cpp")
   endif()
   if(MINGW)
     set(WARNINGS "${WARNINGS} -Wno-error=unused-value -Wno-error=unused-but-set-variable")
     set(MINGW_FLAG "${MINGW_FLAG} -DWIN32_LEAN_AND_MEAN")
     set(Boost_THREADAPI win32)
     include_directories(SYSTEM src/platform/mingw)
-    # mingw doesn't support LTO (multiple definition errors at link time)
-    set(USE_LTO_DEFAULT false)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--stack,10485760")
     if(NOT BUILD_64)
       add_definitions(-DWINVER=0x0501 -D_WIN32_WINNT=0x0501)
@@ -507,19 +582,6 @@ else()
   endif()
   set(C_WARNINGS "-Waggregate-return -Wnested-externs -Wold-style-definition -Wstrict-prototypes")
   set(CXX_WARNINGS "-Wno-reorder -Wno-missing-field-initializers")
-  try_compile(STATIC_ASSERT_RES "${CMAKE_CURRENT_BINARY_DIR}/static-assert" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-static-assert.c" COMPILE_DEFINITIONS "-std=c11")
-  if(STATIC_ASSERT_RES)
-    set(STATIC_ASSERT_FLAG "")
-  else()
-    set(STATIC_ASSERT_FLAG "-Dstatic_assert=_Static_assert")
-  endif()
-
-  try_compile(STATIC_ASSERT_CPP_RES "${CMAKE_CURRENT_BINARY_DIR}/static-assert" "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test-static-assert.cpp" COMPILE_DEFINITIONS "-std=c++14")
-  if(STATIC_ASSERT_CPP_RES)
-    set(STATIC_ASSERT_CPP_FLAG "")
-  else()
-    set(STATIC_ASSERT_CPP_FLAG "-Dstatic_assert=_Static_assert")
-  endif()
 
   option(COVERAGE "Enable profiling for test coverage report" 0)
 
@@ -534,7 +596,7 @@ else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing")
 
   # if those don't work for your compiler, single it out where appropriate
-  if(CMAKE_BUILD_TYPE MATCHES "Release")
+  if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT OPENBSD)
     set(C_SECURITY_FLAGS "${C_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
     set(C_SECURITY_FLAGS "${C_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
     set(CXX_SECURITY_FLAGS "${CXX_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
@@ -547,10 +609,12 @@ else()
   add_cxx_flag_if_supported(-Wformat-security CXX_SECURITY_FLAGS)
 
   # -fstack-protector
-  add_c_flag_if_supported(-fstack-protector C_SECURITY_FLAGS)
-  add_cxx_flag_if_supported(-fstack-protector CXX_SECURITY_FLAGS)
-  add_c_flag_if_supported(-fstack-protector-strong C_SECURITY_FLAGS)
-  add_cxx_flag_if_supported(-fstack-protector-strong CXX_SECURITY_FLAGS)
+  if (NOT OPENBSD AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
+    add_c_flag_if_supported(-fstack-protector C_SECURITY_FLAGS)
+    add_cxx_flag_if_supported(-fstack-protector CXX_SECURITY_FLAGS)
+    add_c_flag_if_supported(-fstack-protector-strong C_SECURITY_FLAGS)
+    add_cxx_flag_if_supported(-fstack-protector-strong CXX_SECURITY_FLAGS)
+  endif()
 
   # -fno-stack-check
   if (IOS)
@@ -559,9 +623,11 @@ else()
   endif()
 
   # New in GCC 8.2
-  if (NOT WIN32 AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if (NOT OPENBSD AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
     add_c_flag_if_supported(-fcf-protection=full C_SECURITY_FLAGS)
     add_cxx_flag_if_supported(-fcf-protection=full CXX_SECURITY_FLAGS)
+  endif()
+  if (NOT WIN32 AND NOT OPENBSD)
     add_c_flag_if_supported(-fstack-clash-protection C_SECURITY_FLAGS)
     add_cxx_flag_if_supported(-fstack-clash-protection CXX_SECURITY_FLAGS)
   endif()
@@ -573,8 +639,8 @@ else()
   endif()
 
   # linker
-  if (NOT WIN32)
-    # Windows binaries die on startup with PIE
+  if (NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
+    # Windows binaries die on startup with PIE when compiled with GCC <9.x
     add_linker_flag_if_supported(-pie LD_SECURITY_FLAGS)
   endif()
   add_linker_flag_if_supported(-Wl,-z,relro LD_SECURITY_FLAGS)
@@ -598,14 +664,15 @@ else()
   if (WIN32)
     add_linker_flag_if_supported(-Wl,--dynamicbase LD_SECURITY_FLAGS)
     add_linker_flag_if_supported(-Wl,--nxcompat LD_SECURITY_FLAGS)
+    add_linker_flag_if_supported(-Wl,--high-entropy-va LD_SECURITY_FLAGS)
   endif()
 
   message(STATUS "Using C security hardening flags: ${C_SECURITY_FLAGS}")
   message(STATUS "Using C++ security hardening flags: ${CXX_SECURITY_FLAGS}")
   message(STATUS "Using linker security hardening flags: ${LD_SECURITY_FLAGS}")
 
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -D_GNU_SOURCE ${MINGW_FLAG} ${STATIC_ASSERT_FLAG} ${WARNINGS} ${C_WARNINGS} ${COVERAGE_FLAGS} ${PIC_FLAG} ${C_SECURITY_FLAGS}")
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -D_GNU_SOURCE ${MINGW_FLAG} ${STATIC_ASSERT_CPP_FLAG} ${WARNINGS} ${CXX_WARNINGS} ${COVERAGE_FLAGS} ${PIC_FLAG} ${CXX_SECURITY_FLAGS}")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D_GNU_SOURCE ${MINGW_FLAG} ${STATIC_ASSERT_FLAG} ${WARNINGS} ${C_WARNINGS} ${COVERAGE_FLAGS} ${PIC_FLAG} ${C_SECURITY_FLAGS}")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GNU_SOURCE ${MINGW_FLAG} ${STATIC_ASSERT_CPP_FLAG} ${WARNINGS} ${CXX_WARNINGS} ${COVERAGE_FLAGS} ${PIC_FLAG} ${CXX_SECURITY_FLAGS}")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${LD_SECURITY_FLAGS} ${LD_BACKCOMPAT_FLAGS}")
 
   # With GCC 6.1.1 the compiled binary malfunctions due to aliasing. Until that
@@ -716,37 +783,6 @@ else()
 
   # At least some CLANGs default to not enough for monero
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftemplate-depth=900")
-
-  if(NOT DEFINED USE_LTO_DEFAULT)
-    set(USE_LTO_DEFAULT false)
-  endif()
-  set(USE_LTO ${USE_LTO_DEFAULT} CACHE BOOL "Use Link-Time Optimization (Release mode only)")
-
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # There is a clang bug that does not allow to compile code that uses AES-NI intrinsics if -flto is enabled, so explicitly disable
-    set(USE_LTO false)
-  endif()
-
-
-  if(USE_LTO)
-    set(RELEASE_FLAGS "${RELEASE_FLAGS} -flto")
-    if(STATIC)
-      set(RELEASE_FLAGS "${RELEASE_FLAGS} -ffat-lto-objects")
-    endif()
-    # Since gcc 4.9 the LTO format is non-standard (slim), so we need the gcc-specific ar and ranlib binaries
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND NOT (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.9.0) AND NOT OPENBSD AND NOT DRAGONFLY)
-      # When invoking cmake on distributions on which gcc's binaries are prefixed
-      # with an arch-specific triplet, the user must specify -DCHOST=<prefix>
-      if (DEFINED CHOST)
-        set(CMAKE_AR "${CHOST}-gcc-ar")
-        set(CMAKE_RANLIB "${CHOST}-gcc-ranlib")
-      else()
-        set(CMAKE_AR "gcc-ar")
-        set(CMAKE_RANLIB "gcc-ranlib")
-      endif()
-    endif()
-  endif()
-
   set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${DEBUG_FLAGS}")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${DEBUG_FLAGS}")
   set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${RELEASE_FLAGS}")
@@ -767,7 +803,7 @@ else()
   endif()
 endif()
 
-if (${BOOST_IGNORE_SYSTEM_PATHS} MATCHES "ON")
+if (${BOOST_IGNORE_SYSTEM_PATHS} STREQUAL "ON")
   set(Boost_NO_SYSTEM_PATHS TRUE)
 endif()
 
@@ -782,9 +818,13 @@ if(STATIC)
   set(Boost_USE_STATIC_RUNTIME ON)
 endif()
 
-# Find Boost headers
-set(BOOST_MIN_VER 1.62)
-find_package(Boost ${BOOST_MIN_VER} QUIET REQUIRED)
+if(BUILD_STATIC_DEPS)
+  # StaticBuild.cmake sets Boost targets up for us
+elseif (WIN32)
+  find_package(Boost 1.58 QUIET REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options locale)
+else()
+  find_package(Boost 1.58 QUIET REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
+endif()
 
 if(NOT Boost_FOUND)
   die("Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (>=${BOOST_MIN_VER}) or the equivalent")
@@ -863,16 +903,17 @@ if (WIN32)
   target_link_libraries(extra INTERFACE setupapi)
 endif()
 
-add_library(readline INTERFACE)
-
 if (BUILD_INTEGRATION)
   target_compile_definitions(extra INTERFACE LOKI_ENABLE_INTEGRATION_TEST_HOOKS)
 else()
   option(USE_READLINE "Build with GNU readline support." ON)
-  if(USE_READLINE AND NOT DEPENDS)
+  if(USE_READLINE AND BUILD_STATIC_DEPS)
+    # readline target already set up
+  elseif(USE_READLINE AND NOT DEPENDS)
     find_package(Readline)
     if(READLINE_FOUND AND GNU_READLINE_FOUND)
-      target_link_libraries(readline INTERFACE ${GNU_READLINE_LIBRARY} epee_readline)
+      add_library(readline INTERFACE)
+      target_link_libraries(readline INTERFACE ${GNU_READLINE_LIBRARY})
       target_include_directories(readline INTERFACE ${Readline_INCLUDE_DIR})
       target_compile_definitions(readline INTERFACE HAVE_READLINE)
       message(STATUS "Found readline library at: ${GNU_READLINE_LIBRARY}")
@@ -883,6 +924,7 @@ else()
     find_path(Readline_INCLUDE_PATH readline/readline.h)
     find_library(Readline_LIBRARY readline)
     find_library(Terminfo_LIBRARY tinfo)
+    add_library(readline INTERFACE)
     target_link_libraries(readline INTERFACE ${Readline_LIBRARY} ${Terminfo_LIBRARY})
     target_include_directories(readline INTERFACE ${Readline_INCLUDE_PATH})
     target_compile_definitions(readline INTERFACE HAVE_READLINE)
@@ -905,20 +947,27 @@ if (LOKI_DEBUG_SHORT_PROOFS)
 endif()
 
 
-add_library(sqlite3 INTERFACE)
-if (NOT SQLITE3_LIBRARIES)
-  pkg_check_modules(SQLITE3 REQUIRED sqlite3)
+if(BUILD_STATIC_DEPS)
+  # sqlite3 target already set up
+else()
+  add_library(sqlite3 INTERFACE)
+  if (NOT SQLITE3_LIBRARIES)
+    pkg_check_modules(SQLITE3 REQUIRED sqlite3)
+  endif()
+  find_library(sqlite3_link_libs NAMES ${SQLITE3_LIBRARIES} PATHS ${SQLITE3_LIBRARY_DIRS})
+  message(STATUS "sqlite3: ${SQLITE3_LIBRARIES} ${sqlite3_link_libs}")
+  target_link_libraries(sqlite3 INTERFACE ${sqlite3_link_libs})
+  target_include_directories(sqlite3 INTERFACE ${SQLITE3_INCLUDE_DIRS})
 endif()
-find_library(sqlite3_link_libs NAMES ${SQLITE3_LIBRARIES} PATHS ${SQLITE3_LIBRARY_DIRS})
-message(STATUS "sqlite3: ${SQLITE3_LIBRARIES} ${sqlite3_link_libs}")
-target_link_libraries(sqlite3 INTERFACE ${sqlite3_link_libs})
-target_include_directories(sqlite3 INTERFACE ${SQLITE3_INCLUDE_DIRS})
 
 add_subdirectory(contrib)
 add_subdirectory(src)
 
 if(BUILD_TESTS)
+  message(STATUS "Building tests")
   add_subdirectory(tests)
+else()
+  message(STATUS "Not building tests")
 endif()
 
 if(BUILD_DOCUMENTATION)
@@ -945,3 +994,59 @@ endif()
 
 # when ON - will install libwallet_merged into "lib"
 option(BUILD_GUI_DEPS "Build GUI dependencies." OFF)
+find_package(PythonInterp)
+find_program(iwyu_tool_path NAMES iwyu_tool.py iwyu_tool)
+if (iwyu_tool_path AND PYTHONINTERP_FOUND)
+  add_custom_target(iwyu
+    COMMAND "${PYTHON_EXECUTABLE}" "${iwyu_tool_path}" -p "${CMAKE_BINARY_DIR}" -- --no_fwd_decls
+    COMMENT "Running include-what-you-use tool"
+    VERBATIM
+  )
+endif()
+
+get_property(sispop_exec_tgts GLOBAL PROPERTY sispop_executable_targets)
+set(strip_binaries "")
+foreach(tgt ${sispop_exec_tgts})
+  list(APPEND strip_binaries COMMAND ${CMAKE_STRIP} $<TARGET_FILE:${tgt}>)
+endforeach()
+add_custom_target(strip_binaries ${strip_binaries} DEPENDS ${sispop_exec_tgts})
+
+execute_process(COMMAND tar --version RESULT_VARIABLE tar_exit_code OUTPUT_VARIABLE tar_vers)
+set(git_tag "unknown")
+if(GIT_FOUND)
+  execute_process(COMMAND "${GIT_EXECUTABLE}" rev-parse --short=9 HEAD RESULT_VARIABLE ret OUTPUT_VARIABLE commithash OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(NOT ret)
+    set(git_tag ${commithash})
+  endif()
+endif()
+
+set(tar_os ${CMAKE_SYSTEM_NAME})
+set(default_archive create_tarxz)
+if(tar_os STREQUAL "Linux")
+  set(tar_os "linux-${CMAKE_SYSTEM_PROCESSOR}")
+elseif(tar_os STREQUAL "Darwin")
+  set(tar_os "macos")
+elseif(tar_os STREQUAL "Windows")
+  if(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES i686-.*mingw)
+    set(tar_os "win-x86")
+  elseif(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES x86_64-.*mingw)
+    set(tar_os "win-x64")
+  else()
+    set(tar_os "windows") # Don't know what arch
+  endif()
+  set(default_archive create_zip) # .tar.xz files are too scary for Windows users
+endif()
+set(tar_dir "sispop-${tar_os}-${PROJECT_VERSION}${SISPOP_RELEASE_SUFFIX}-${git_tag}")
+add_custom_target(create_tarxz
+  COMMAND ${CMAKE_COMMAND} -E rename bin "${tar_dir}"
+  COMMAND ${CMAKE_COMMAND} -E tar cvJ "${tar_dir}.tar.xz" -- "${tar_dir}"
+  COMMAND ${CMAKE_COMMAND} -E rename "${tar_dir}" bin
+  DEPENDS ${sispop_exec_tgts})
+
+add_custom_target(create_zip
+  COMMAND ${CMAKE_COMMAND} -E rename bin "${tar_dir}"
+  COMMAND ${CMAKE_COMMAND} -E tar cv "${tar_dir}.zip" --format=zip -- "${tar_dir}"
+  COMMAND ${CMAKE_COMMAND} -E rename "${tar_dir}" bin
+  DEPENDS ${sispop_exec_tgts})
+
+add_custom_target(create_archive DEPENDS ${default_archive})
