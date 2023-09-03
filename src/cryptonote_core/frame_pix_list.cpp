@@ -793,7 +793,7 @@ namespace frame_pixs
     std::vector<cryptonote::account_public_address> frame_pix_addresses;
     std::vector<uint64_t> frame_pix_portions;
     uint64_t portions_for_operator;
-    uint64_t expiration_timestamp;
+    uint64_t expiration_timestamp{0};
     crypto::signature signature;
 
     if (!reg_tx_extract_fields(tx, frame_pix_addresses, portions_for_operator, frame_pix_portions, expiration_timestamp, frame_pix_key, signature))
