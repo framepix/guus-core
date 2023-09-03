@@ -4755,5 +4755,6 @@ int main(int argc, char** argv) {
   }
 
   return daemonizer::daemonize(argc, const_cast<const char**>(argv), t_executor{}, *vm) ? 0 : 1;
+
   CATCH_ENTRY_L0("main", 1);
 }
