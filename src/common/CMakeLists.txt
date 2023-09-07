@@ -73,7 +73,7 @@ target_link_libraries(common
     cncrypto
     lokimq::lokimq
   PRIVATE
-    ${UNBOUND_LIBRARIES}
+    libunbound
     Boost::regex
     OpenSSL::SSL
     OpenSSL::Crypto
