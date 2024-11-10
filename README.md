@@ -1,5 +1,9 @@
-# Monero
+# Guus Core
 
+
+Copyright (c) 2024 The Guus Project.
+Copyright (c) 2018-2024 The Oxen Project.
+Copyright (c) 2018-2024 The Ryo Project.
 Copyright (c) 2014-2021 The Monero Project.   
 Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
@@ -28,12 +32,10 @@ Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
 ## Development resources
 
-- Web: [getmonero.org](https://getmonero.org)
-- Forum: [forum.getmonero.org](https://forum.getmonero.org)
-- Mail: [dev@getmonero.org](mailto:dev@getmonero.org)
-- GitHub: [https://github.com/monero-project/monero](https://github.com/monero-project/monero)
-- IRC: [#monero-dev on Libera](https://web.libera.chat/#monero-dev)
-- It is HIGHLY recommended that you join the #monero-dev IRC channel if you are developing software that uses Monero. Due to the nature of this open source software project, joining this channel and idling is the best way to stay updated on best practices and new developments in the Monero ecosystem. All you need to do is join the IRC channel and idle to stay updated with the latest in Monero development. If you do not, you risk wasting resources on developing integrations that are not compatible with the Monero network. The Monero core team and community continuously make efforts to communicate updates, developments, and documentation via other platforms – but for the best information, you need to talk to other Monero developers, and they are on IRC. #monero-dev is about Monero development, not getting help about using Monero, or help about development of other software, including yours, unless it also pertains to Monero code itself. For these cases, checkout #monero. 
+- Web: [guus.website](https://guus.website)
+- Forum: [Discord](https://discord.gg/HpqF42znPm)
+- GitHub: [https://github.com/framepix/guus-core](https://github.com/framepix/guus-core)
+
 
 ## Vulnerability response
 
@@ -82,9 +84,74 @@ Monero is a private, secure, untraceable, decentralised digital currency. You ar
 
 ## About this project
 
-This is the core implementation of Monero. It is open source and completely free to use without restrictions, except for those specified in the license agreement below. There are no restrictions on anyone creating an alternative implementation of Monero that uses the protocol and network in a compatible manner.
+This project is an innovative blockchain solution forked from Monero, Ryo, Oxen, focusing on **secure, decentralized storage** for images and files. Leveraging Monero’s advanced privacy features, this fork enables users to store data on the blockchain with high levels of security, anonymity, and data integrity. By decentralizing storage, this project aims to provide a resilient, accessible, and user-controlled storage system where data can be stored and retrieved with peace of mind.
 
-As with many development projects, the repository on Github is considered to be the "staging" area for the latest changes. Before changes are merged into that branch on the main repository, they are tested by individual developers in their own branches, submitted as a pull request, and then subsequently tested by contributors who focus on testing and code reviews. That having been said, the repository should be carefully considered before using it in a production environment, unless there is a patch in the repository for a particular show-stopping issue you are experiencing. It is generally a better idea to use a tagged release for stability.
+🔗 **Follow us on GitHub**: [<i class="fa-brands fa-github"></i>](https://github.com/framepix/guus-core) 
+
+---
+
+## Project Overview
+
+This project combines the strengths of blockchain technology with secure data handling to offer users an alternative to centralized storage solutions. By integrating file and image handling directly into a forked Monero core, this system is designed to:
+
+- Maintain privacy and security with Monero’s robust anonymizing and encryption protocols.
+- Enable easy file and image uploads with a straightforward client interface.
+- Distribute files across a decentralized network of nodes for enhanced redundancy.
+- Reward network participants through a fair incentive structure, fostering a sustainable and secure ecosystem.
+
+### System Architecture
+
+The system architecture is designed around six key layers, each providing distinct functionalities that collectively power the entire decentralized storage solution.
+
+```plaintext
++------------------------+
+|  Client-side Interface |
+|------------------------|
+|  - File/Image Upload   |
+|  - Transaction Mgmt    |
++------------------------+
+            |
+            v
++------------------------+
+|  Blockchain Layer      |
+|------------------------|
+|  - Guus Core           |
+|  - Storage Integration |
++------------------------+
+            |
+            v
++------------------------+
+|  Storage Mechanism     |
+|------------------------|
+|  - Decentralized File  |
+|    Storage             |
+|  - File/Image Handling |
++------------------------+
+            |
+            v
++------------------------+
+|  Security and Privacy  |
+|------------------------|
+|  - Data Encryption     |
+|  - User Anonymity      |
++------------------------+
+            |
+            v
++------------------------+
+|  Smart Contract Layer  |
+|------------------------|
+|  - Storage Mgmt        |
+|  - Retrieval Mgmt      |
++------------------------+
+            |
+            v
++------------------------+
+|  Rewards and Incentives|
+|------------------------|
+|  - Mining Rewards      |
+|  - Node Rewards        |
++------------------------+
+```
 
 **Anyone is welcome to contribute to Monero's codebase!** If you have a fix or code change, feel free to submit it as a pull request directly to the "master" branch. In cases where the change is relatively small or does not affect other parts of the codebase, it may be merged in immediately by any one of the collaborators. On the other hand, if the change is particularly large or complex, it is expected that it will be discussed at length either well in advance of the pull request being submitted, or even directly on the pull request.
 
