@@ -2,8 +2,11 @@
 
 
 Copyright (c) 2024 The Guus Project.
+
 Copyright (c) 2018-2024 The Oxen Project.
+
 Copyright (c) 2018-2024 The Ryo Project.
+
 Copyright (c) 2014-2021 The Monero Project.   
 Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
