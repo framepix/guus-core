@@ -73,11 +73,15 @@ using namespace epee;
   #include <windows.h>
   #include <shlobj.h>
   #include <strsafe.h>
+#ifndef STRSAFE_NO_DEPRECATE
+#define STRSAFE_NO_DEPRECATE
+#endif
 #else 
   #include <sys/file.h>
   #include <sys/utsname.h>
   #include <sys/stat.h>
 #endif
+
 #include <boost/filesystem.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/asio.hpp>

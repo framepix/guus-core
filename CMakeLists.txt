@@ -849,6 +849,7 @@ set(Boost_NO_BOOST_CMAKE ON)
 if(STATIC)
   if(MINGW)
     set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+    set(Boost_NO_BOOST_CMAKE ON)
   endif()
 
   set(Boost_USE_STATIC_LIBS ON)

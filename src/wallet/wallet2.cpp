@@ -6778,9 +6778,9 @@ int wallet2::get_fee_algorithm() const
 //------------------------------------------------------------------------------------------------------------------------------
 uint64_t wallet2::adjust_mixin(uint64_t mixin) const
 {
-  if (mixin != 9) {
+  if (mixin != 19) {
     MWARNING("Requested ring size " << (mixin + 1) << " incorrect for guus, using 10");
-    mixin = 9;
+    mixin = 19;
   }
   return mixin;
 }
@@ -10546,14 +10546,14 @@ const wallet2::transfer_details &wallet2::get_transfer_details(size_t idx) const
 std::vector<size_t> wallet2::select_available_unmixable_outputs()
 {
   // request all outputs with not enough available mixins
-  const size_t min_mixin = use_fork_rules(6, 10) ? 9 : 2; // v6 increases min mixin from 2 to 9
+  const size_t min_mixin = use_fork_rules(6, 10) ? 19 : 2; // v6 increases min mixin from 2 to 9
   return select_available_outputs_from_histogram(min_mixin + 1, false, true, false);
 }
 //----------------------------------------------------------------------------------------------------
 std::vector<size_t> wallet2::select_available_mixable_outputs()
 {
   // request all outputs with at least 10nstances, so we can use mixin 9 with
-  const size_t min_mixin = use_fork_rules(6, 10) ? 9 : 2; // v6 increases min mixin from 2 to 9
+  const size_t min_mixin = use_fork_rules(6, 10) ? 19 : 2; // v6 increases min mixin from 2 to 9
   return select_available_outputs_from_histogram(min_mixin + 1, true, true, true);
 }
 //----------------------------------------------------------------------------------------------------

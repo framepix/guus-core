@@ -227,7 +227,8 @@ PRAGMA_WARNING_DISABLE_VS(4355)
   template<class t_protocol_handler>
   boost::asio::io_service& connection<t_protocol_handler>::get_io_service()
   {
-    return socket_.get_io_service();
+       boost::asio::io_context& io_service = static_cast<boost::asio::io_context&>(socket_.get_executor().context());
+	return io_service;
   }
   //---------------------------------------------------------------------------------
   template<class t_protocol_handler>
@@ -399,7 +400,8 @@ PRAGMA_WARNING_DISABLE_VS(4355)
     if(!m_is_multithreaded)
     {
       //single thread model, we can wait in blocked call
-      size_t cnt = socket_.get_io_service().run_one();
+        boost::asio::io_context& io_context = static_cast<boost::asio::io_context&>(socket_.get_executor().context());
+    size_t cnt = io_context.run(); // Run the io_context's event loop
       if(!cnt)//service is going to quit
         return false;
     }else
@@ -409,7 +411,8 @@ PRAGMA_WARNING_DISABLE_VS(4355)
       //if no handlers were called
       //TODO: Maybe we need to have have critical section + event + callback to upper protocol to
       //ask it inside(!) critical region if we still able to go in event wait...
-      size_t cnt = socket_.get_io_service().poll_one();     
+      boost::asio::io_context& io_context = static_cast<boost::asio::io_context&>(socket_.get_executor().context());
+    size_t cnt = io_context.poll();
       if(!cnt)
         misc_utils::sleep_no_w(1);
     }
