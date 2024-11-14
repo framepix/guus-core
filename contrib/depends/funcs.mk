@@ -32,7 +32,7 @@ endef
 define fetch_file
     ( test -f $$($(1)_source_dir)/$(4) || \
     ( $(call fetch_file_inner,$(1),$(2),$(3),$(4),$(5)) || \
-      $(call fetch_file_inner,$(1),$(FALLBACK_DOWNLOAD_PATH),$(3),$(4),$(5))))
+      $(call fetch_file_inner,$(1),$(FALLBACK_DOWNLOAD_PATH),$(4),$(4),$(5))))
 endef
 
 define int_get_build_recipe_hash
@@ -133,12 +133,17 @@ $(1)_config_env+=$($(1)_config_env_$(host_arch)) $($(1)_config_env_$(host_arch)_
 $(1)_config_env+=$($(1)_config_env_$(host_os)) $($(1)_config_env_$(host_os)_$(release_type))
 $(1)_config_env+=$($(1)_config_env_$(host_arch)_$(host_os)) $($(1)_config_env_$(host_arch)_$(host_os)_$(release_type))
 
+$(1)_build_env+=$$($(1)_build_env_$(release_type))
+$(1)_build_env+=$($(1)_build_env_$(host_arch)) $($(1)_build_env_$(host_arch)_$(release_type))
+$(1)_build_env+=$($(1)_build_env_$(host_os)) $($(1)_build_env_$(host_os)_$(release_type))
+$(1)_build_env+=$($(1)_build_env_$(host_arch)_$(host_os)) $($(1)_build_env_$(host_arch)_$(host_os)_$(release_type))
+
 $(1)_config_env+=PKG_CONFIG_LIBDIR=$($($(1)_type)_prefix)/lib/pkgconfig
 $(1)_config_env+=PKG_CONFIG_PATH=$($($(1)_type)_prefix)/share/pkgconfig
-$(1)_config_env+=PATH=$(build_prefix)/bin:$(PATH)
-$(1)_build_env+=PATH=$(build_prefix)/bin:$(PATH)
-$(1)_stage_env+=PATH=$(build_prefix)/bin:$(PATH)
-$(1)_autoconf=./configure --host=$($($(1)_type)_host) --disable-dependency-tracking --prefix=$($($(1)_type)_prefix) $$($(1)_config_opts) CC="$$($(1)_cc)" CXX="$$($(1)_cxx)"
+$(1)_config_env+=PATH="$(build_prefix)/bin:$(PATH)"
+$(1)_build_env+=PATH="$(build_prefix)/bin:$(PATH)"
+$(1)_stage_env+=PATH="$(build_prefix)/bin:$(PATH)"
+$(1)_autoconf=./configure --host=$($($(1)_type)_host) --prefix=$($($(1)_type)_prefix) $$($(1)_config_opts) CC="$$($(1)_cc)" CXX="$$($(1)_cxx)"
 
 ifeq ($(filter $(1),libusb unbound),)
 $(1)_autoconf += --disable-dependency-tracking
@@ -223,6 +228,14 @@ $($(1)_cached_checksum): $($(1)_cached)
 $(1): | $($(1)_cached_checksum)
 .SECONDARY: $($(1)_cached) $($(1)_postprocessed) $($(1)_staged) $($(1)_built) $($(1)_configured) $($(1)_preprocessed) $($(1)_extracted) $($(1)_fetched)
 
+endef
+
+stages = fetched extracted preprocessed configured built staged postprocessed cached cached_checksum
+
+define ext_add_stages
+$(foreach stage,$(stages),
+          $(1)_$(stage): $($(1)_$(stage))
+          .PHONY: $(1)_$(stage))
 endef
 
 # These functions create the build targets for each package. They must be
