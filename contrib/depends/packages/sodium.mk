@@ -10,12 +10,14 @@ $(package)_config_opts=--enable-static --disable-shared
 $(package)_config_opts+=--prefix=$(host_prefix)
 endef
 
+define $(package)_preprocess_cmds
+  patch -p1 < $($(package)_patch_dir)/disable-glibc-getrandom-getentropy.patch &&\
+  autoconf &&\
+  patch -p1 < $($(package)_patch_dir)/fix-whitespace.patch
+endef
 
 define $(package)_config_cmds
-  patch -p1 < $($(package)_patch_dir)/disable-glibc-getrandom-getentropy.patch && \
-  ./autogen.sh &&\
-  patch -p1 < $($(package)_patch_dir)/fix-whitespace.patch &&\
-  $($(package)_autoconf) $($(package)_config_opts) AR_FLAGS=$($(package)_arflags)
+  $($(package)_autoconf) AR_FLAGS=$($(package)_arflags)
 endef
 
 define $(package)_build_cmds
@@ -29,3 +31,4 @@ endef
 define $(package)_postprocess_cmds
   rm lib/*.la
 endef
+
