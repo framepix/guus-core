@@ -423,11 +423,11 @@ namespace nodetool
     std::set<std::string> full_addrs;
     if (nettype == cryptonote::TESTNET)
     {
-      full_addrs.insert("52.63.146.137:38156");
+      full_addrs.insert("85.31.237.246:18080");
     }
     else if (nettype == cryptonote::STAGENET)
     {
-      full_addrs.insert("13.211.225.142:38153");
+      full_addrs.insert("85.31.237.246:28080");
     }
     else if (nettype == cryptonote::FAKECHAIN)
     {
