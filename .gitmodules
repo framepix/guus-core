@@ -10,3 +10,6 @@
 [submodule "external/trezor-common"]
 	path = external/trezor-common
 	url = https://github.com/trezor/trezor-common
+[submodule "external/randomx"]
+	path = external/randomx
+	url = https://github.com/framepix/randomx
