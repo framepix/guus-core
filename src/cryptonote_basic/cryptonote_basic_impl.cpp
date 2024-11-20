@@ -95,7 +95,7 @@ namespace cryptonote {
   uint64_t block_reward_unpenalized_formula_v8(uint64_t height)
   {
     std::fesetround(FE_TONEAREST);
-    uint64_t result = 28'000'000'000. + 100'000'000'000. / guus::exp2(height / (720. * 90)); // halve every 90 days.
+    uint64_t result = 500'000'000'000. + 100'000'000'000. / guus::exp2(height / (720. * 90)); // halve every 90 days.
     return result;
   }
 
@@ -112,7 +112,7 @@ namespace cryptonote {
 
     uint64_t base_reward =
       version >= network_version_15 ? BLOCK_REWARD_HF15 :
-      version >= network_version_8  ? BLOCK_REWARD_HF15 :
+      version >= network_version_8  ? block_reward_unpenalized_formula_v8(height) :
         block_reward_unpenalized_formula_v7(already_generated_coins, height);
 
     uint64_t full_reward_zone = get_min_block_weight(version);
