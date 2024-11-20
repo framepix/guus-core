@@ -227,7 +227,7 @@ namespace config
     "L8TcwCGddTB87DMNBrfXgpTUVY6hd553CeQPQDoUG8nG9jLTHd4j"
     "mxBMchbtrSZY2n3uo2bRbSpKLaCDJTqJ5B7BNyY6vGc",
     "L8TcwCGddTB87DMNBrfXgpTUVY6hd553CeQPQDoUG8nG9jLTHd4j"
-    "mxBMchbtrSZY2n3uo2bRbSpKLaCDJTqJ5B7BNyY6vG",
+    "mxBMchbtrSZY2n3uo2bRbSpKLaCDJTqJ5B7BNyY6vGc",
   };
 
   // Hash domain separators

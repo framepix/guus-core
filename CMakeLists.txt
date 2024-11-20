@@ -220,7 +220,7 @@ if(NOT MANUAL_SUBMODULES)
 endif()
 
 # set this to 0 if per-block checkpoint needs to be disabled
-option(PER_BLOCK_CHECKPOINT "Enables per-block checkpointing" ON)
+option(PER_BLOCK_CHECKPOINT "Enables per-block checkpointing" OFF)
 
 list(INSERT CMAKE_MODULE_PATH 0
   "${CMAKE_SOURCE_DIR}/cmake")
