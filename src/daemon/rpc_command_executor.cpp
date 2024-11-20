@@ -2504,17 +2504,12 @@ static void append_printable_frame_pix_list_entry(cryptonote::network_type netty
     stream << indent2;
     if (entry.last_uptime_proof == 0)
     {
-      stream << "Last Uptime Proof Received: (Awaiting confirmation from network)";
-    }
-    else
-    {
+      stream << "Last Uptime Proof Received: " << get_human_time_ago(entry.last_uptime_proof, time(nullptr));
+    } else {
       stream << "Last Uptime Proof Received: " << get_human_time_ago(entry.last_uptime_proof, time(nullptr));
     }
 
     stream << "\n";
-    stream << indent2 << "IP Address & Ports: ";
-    if (entry.public_ip == "0.0.0.0")
-      stream << "(Awaiting confirmation from network)";
 
     stream << "\n";
     if (detailed_view)
@@ -2522,11 +2517,6 @@ static void append_printable_frame_pix_list_entry(cryptonote::network_type netty
              << indent3 << (entry.pubkey_ed25519.empty() ? "(not yet received)" : entry.pubkey_ed25519) << " (Ed25519)\n"
              << indent3 << (entry.pubkey_x25519.empty()  ? "(not yet received)" : entry.pubkey_x25519)  << " (X25519)\n";
 
-    if (entry.storage_server_reachable_timestamp == 0)
-      stream << "Awaiting first test";
-    else
-      stream << "Last checked: " << get_human_time_ago(entry.storage_server_reachable_timestamp, now);
-    stream << ")\n";
 
     stream << indent2 <<  "Checkpoint Participation [Height: Voted]: ";
     // Checkpoints heights are a rotating queue, so find the smallest one and print starting from there

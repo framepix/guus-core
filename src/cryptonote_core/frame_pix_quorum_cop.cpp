@@ -112,8 +112,6 @@ namespace frame_pixs
         uint64_t find_ips_used_since = std::max(
             uint64_t(std::time(nullptr)) - IP_CHANGE_WINDOW_IN_SECONDS,
             uint64_t(blocks[0].timestamp) + IP_CHANGE_BUFFER_IN_SECONDS);
-        if (ips[0].second > find_ips_used_since && ips[1].second > find_ips_used_since)
-          result.single_ip = false;
       }
     }
 
@@ -307,11 +305,6 @@ namespace frame_pixs
                   if (info.is_decommissioned()) {
                     vote_for_state = new_state::recommission;
                     LOG_PRINT_L2("Decommissioned service node " << quorum->workers[node_index] << " is now passing required checks; voting to recommission");
-                  } else if (!test_results.single_ip) {
-                      // Don't worry about this if the SN is getting recommissioned (above) -- it'll
-                      // already reenter at the bottom.
-                      vote_for_state = new_state::ip_change_penalty;
-                      LOG_PRINT_L2("Frame pix " << quorum->workers[node_index] << " was observed with multiple IPs recently; voting to reset reward position");
                   } else {
                       good++;
                       continue;

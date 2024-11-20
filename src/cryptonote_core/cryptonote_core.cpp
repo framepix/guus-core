@@ -471,7 +471,7 @@ namespace cryptonote
   // Returns a string for systemd status notifications such as:
   // Height: 1234567, SN: active, proof: 55m12s, storage: 4m48s, guusnet: 47s
   static std::string get_systemd_status_string(const core &c)
-  {
+{
     std::string s;
     s.reserve(128);
     s += 'v'; s += GUUS_VERSION_STR;
@@ -480,36 +480,32 @@ namespace cryptonote
     s += ", SN: ";
     auto keys = c.get_frame_pix_keys();
     if (!keys)
-      s += "no";
+        s += "no";
     else
     {
-      auto &snl = c.get_frame_pix_list();
-      auto states = snl.get_frame_pix_list_state({ keys->pub });
-      if (states.empty())
-        s += "not registered";
-      else
-      {
-        auto &info = *states[0].info;
-        if (!info.is_fully_funded())
-          s += "awaiting contr.";
-        else if (info.is_active())
-          s += "active";
-        else if (info.is_decommissioned())
-          s += "decomm.";
-
-        uint64_t last_proof = 0;
-        snl.access_proof(keys->pub, [&](auto &proof) { last_proof = proof.timestamp; });
-        s += ", proof: ";
-        time_t now = std::time(nullptr);
-        s += time_ago_str(now, last_proof);
-        s += ", storage: ";
-        s += time_ago_str(now, c.m_last_storage_server_ping);
-        s += ", guusnet: ";
-        s += time_ago_str(now, c.m_last_guusnet_ping);
-      }
+        auto &snl = c.get_frame_pix_list();
+        auto states = snl.get_frame_pix_list_state({ keys->pub });
+        if (states.empty())
+            s += "not registered";
+        else
+        {
+            auto &info = *states[0].info;
+            if (!info.is_fully_funded())
+                s += "awaiting contr.";
+            else if (info.is_active())
+                s += "active";
+            else if (info.is_decommissioned())
+                s += "decomm.";
+            uint64_t last_proof = 0;
+            snl.access_proof(keys->pub, [&](auto &proof) { last_proof = proof.timestamp; });
+            s += ", proof: ";
+            time_t now = std::time(nullptr);
+            s += time_ago_str(now, last_proof);
+        }
     }
     return s;
-  }
+   }
+
 #endif
 
   //-----------------------------------------------------------------------------------------------

@@ -106,17 +106,19 @@ static constexpr HardFork::Params mainnet_hard_forks[] =
  0,
  1732021188
   },
+
  {
  cryptonote::network_version_14,
- 173,
+ 280,
  0,
- 1731978000
+ 1732102452
   },
+
  {
  cryptonote::network_version_15,
- 174,
- 0,
-1731978300
+ 300,
+   0,
+ 1732103592
   },
 };
 
