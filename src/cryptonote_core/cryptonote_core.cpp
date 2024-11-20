@@ -1,5 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
-// Copyright (c)      2018, The Guus Project
+// Copyright (c) 2014-2024, The Monero Project
 //
 // All rights reserved.
 //
@@ -2290,45 +2289,40 @@ namespace cryptonote
   {
     if (m_offline || m_nettype == FAKECHAIN || m_target_blockchain_height > get_current_blockchain_height())
     {
-      MDEBUG("Not checking block rate, offline or syncing");
-      return true;
+        MDEBUG("Not checking block rate, offline or syncing");
+        return true;
     }
 
-#if defined(GUUS_ENABLE_INTEGRATION_TEST_HOOKS)
+  #if defined(GUUS_ENABLE_INTEGRATION_TEST_HOOKS)
     MDEBUG("Not checking block rate, integration test mode");
     return true;
-#endif
+  #endif
 
     static constexpr double threshold = 1. / (864000 / DIFFICULTY_TARGET_V2); // one false positive every 10 days
 
     const time_t now = time(NULL);
     const std::vector<time_t> timestamps = m_blockchain_storage.get_last_block_timestamps(60);
 
-    static const unsigned int seconds[] = { 5400, 3600, 1800, 1200, 600 };
-    for (size_t n = 0; n < sizeof(seconds)/sizeof(seconds[0]); ++n)
+    unsigned int b = 0;
+    const time_t time_boundary = now - static_cast<time_t>(3600); // One hour (3600 seconds)
+    for (time_t ts : timestamps) b += ts >= time_boundary;
+
+    const double p = probability(b, 3600 / DIFFICULTY_TARGET_V2);
+    MDEBUG("blocks in the last 60 minutes: " << b << " (probability " << p << ")");
+    MWARNING("There were " << b << " blocks in the last 60 minutes, there might be large hash rate changes, or we might be partitioned, cut off from the Guus network or under attack. Or it could be just sheer bad luck.");
+
+    std::shared_ptr<tools::Notify> block_rate_notify = m_block_rate_notify;
+    if (block_rate_notify)
     {
-      unsigned int b = 0;
-      const time_t time_boundary = now - static_cast<time_t>(seconds[n]);
-      for (time_t ts: timestamps) b += ts >= time_boundary;
-      const double p = probability(b, seconds[n] / DIFFICULTY_TARGET_V2);
-      MDEBUG("blocks in the last " << seconds[n] / 60 << " minutes: " << b << " (probability " << p << ")");
-      if (p < threshold)
-      {
-        MWARNING("There were " << b << " blocks in the last " << seconds[n] / 60 << " minutes, there might be large hash rate changes, or we might be partitioned, cut off from the Guus network or under attack. Or it could be just sheer bad luck.");
-
-        std::shared_ptr<tools::Notify> block_rate_notify = m_block_rate_notify;
-        if (block_rate_notify)
-        {
-          auto expected = seconds[n] / DIFFICULTY_TARGET_V2;
-          block_rate_notify->notify("%t", std::to_string(seconds[n] / 60).c_str(), "%b", std::to_string(b).c_str(), "%e", std::to_string(expected).c_str(), NULL);
-        }
-
-        break; // no need to look further
-      }
+        auto expected = 3600 / DIFFICULTY_TARGET_V2;
+        block_rate_notify->notify("%t", "60", "%b", std::to_string(b).c_str(), "%e", std::to_string(expected).c_str(), NULL);
     }
 
+    // Sleep for an hour before checking again
+    std::this_thread::sleep_for(std::chrono::hours(1));
+
     return true;
-  }
+   }
   //-----------------------------------------------------------------------------------------------
   bool core::set_storage_server_peer_reachable(crypto::public_key const &pubkey, bool value)
   {

@@ -1,4 +1,4 @@
-// Copyright (c)      2018, The Guus Project
+// 
 //
 // All rights reserved.
 //
