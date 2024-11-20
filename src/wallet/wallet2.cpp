@@ -2746,7 +2746,7 @@ void wallet2::process_parsed_blocks(const uint64_t start_height, const std::vect
   waiter.wait(&tpool);
   hwdev.set_mode(hw::device::NONE);
 
-  size_t current_index = start_height;
+  current_index = start_height;
   size_t tx_cache_data_offset = 0;
   for (size_t i = 0; i < blocks.size(); ++i)
   {

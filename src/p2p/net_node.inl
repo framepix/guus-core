@@ -1,5 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
-// Copyright (c) 2018-2019, The Guus Project
+// Copyright (c) 2014-2024, The Monero Project
 //
 // All rights reserved.
 //
