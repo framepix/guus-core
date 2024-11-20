@@ -17,7 +17,7 @@ uint64_t get_staking_requirement(cryptonote::network_type m_nettype, uint64_t he
   }
   else if ( height < 5040)
   {
-     return 10000 * COIN;
+     return 25000 * COIN;
   }
  else{
       return 120000 * COIN;
