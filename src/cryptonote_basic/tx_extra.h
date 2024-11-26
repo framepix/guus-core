@@ -1,21 +1,22 @@
-// Copyright (c) 2014-2019, The Monero Project
-// 
+// Copyright (c) 2014-2024, The Monero Project
+// Copyright (c)      2024, The Guus Project
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -47,16 +48,19 @@
 #define TX_EXTRA_NONCE                          0x02
 #define TX_EXTRA_MERGE_MINING_TAG               0x03
 #define TX_EXTRA_TAG_ADDITIONAL_PUBKEYS         0x04
-#define TX_EXTRA_TAG_FRAME_PIX_REGISTER      0x70
-#define TX_EXTRA_TAG_FRAME_PIX_DEREG_OLD     0x71
-#define TX_EXTRA_TAG_FRAME_PIX_WINNER        0x72
-#define TX_EXTRA_TAG_FRAME_PIX_CONTRIBUTOR   0x73
-#define TX_EXTRA_TAG_FRAME_PIX_PUBKEY        0x74
+#define TX_EXTRA_TAG_FRAME_PIX_REGISTER         0x70
+#define TX_EXTRA_TAG_FRAME_PIX_DEREG_OLD        0x71
+#define TX_EXTRA_TAG_FRAME_PIX_WINNER           0x72
+#define TX_EXTRA_TAG_FRAME_PIX_CONTRIBUTOR      0x73
+#define TX_EXTRA_TAG_FRAME_PIX_PUBKEY           0x74
 #define TX_EXTRA_TAG_TX_SECRET_KEY              0x75
 #define TX_EXTRA_TAG_TX_KEY_IMAGE_PROOFS        0x76
 #define TX_EXTRA_TAG_TX_KEY_IMAGE_UNLOCK        0x77
-#define TX_EXTRA_TAG_FRAME_PIX_STATE_CHANGE  0x78
+#define TX_EXTRA_TAG_FRAME_PIX_STATE_CHANGE     0x78
 #define TX_EXTRA_TAG_BURN                       0x79
+// New tag for file data
+#define TX_EXTRA_TAG_FILE_DATA                  0x80
+
 #define TX_EXTRA_TAG_GUUS_NAME_SYSTEM           0x7A
 
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG       0xDE
@@ -307,6 +311,17 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+    struct tx_extra_file_data {
+        std::string file_hash;               // Hash of the file
+        std::string file_type;               // "png", "jpg", "pdf"
+        std::vector<uint8_t> file_content;   // Encoded or binary file content
+
+        BEGIN_SERIALIZE()
+            FIELD(file_hash)
+            FIELD(file_type)
+            FIELD(file_content)
+        END_SERIALIZE()
+    };
 
   struct tx_extra_frame_pix_register
   {
@@ -568,7 +583,8 @@ namespace cryptonote
                          tx_extra_tx_key_image_proofs,
                          tx_extra_tx_key_image_unlock,
                          tx_extra_burn,
-                         tx_extra_guus_name_system
+                         tx_extra_guus_name_system,
+                         tx_extra_file_data
                         > tx_extra_field;
 }
 
@@ -592,3 +608,4 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_proofs,         TX
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_unlock,         TX_EXTRA_TAG_TX_KEY_IMAGE_UNLOCK);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_burn,                        TX_EXTRA_TAG_BURN);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_guus_name_system,            TX_EXTRA_TAG_GUUS_NAME_SYSTEM);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_file_data,                   TX_EXTRA_TAG_FILE_DATA);
