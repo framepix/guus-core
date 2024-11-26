@@ -173,6 +173,9 @@ static_assert(BLINK_BURN_TX_FEE_PERCENT >= 0, "blink burn tx percent cannot be n
 
 #define THREAD_STACK_SIZE                       5 * 1024 * 1024
 
+constexpr size_t MAX_FILE_SIZE = 1024 * 1024; // 1 MB max file size
+const std::vector<std::string> ALLOWED_FILE_TYPES = { "png", "jpg", "jpeg", "pdf" };
+
 #define HF_VERSION_PER_BYTE_FEE                 cryptonote::network_version_10
 #define HF_VERSION_SMALLER_BP                   cryptonote::network_version_11
 #define HF_VERSION_LONG_TERM_BLOCK_WEIGHT       cryptonote::network_version_11
