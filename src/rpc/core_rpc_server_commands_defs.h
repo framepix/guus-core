@@ -94,7 +94,7 @@ constexpr char const CORE_RPC_STATUS_TX_LONG_POLL_MAX_CONNECTIONS[] = "Daemon ma
 // advance which version they will stop working with
 // Don't go over 32767 for any of these
 #define CORE_RPC_VERSION_MAJOR 3
-#define CORE_RPC_VERSION_MINOR 4
+#define CORE_RPC_VERSION_MINOR 7
 #define MAKE_CORE_RPC_VERSION(major,minor) (((major)<<16)|(minor))
 #define CORE_RPC_VERSION MAKE_CORE_RPC_VERSION(CORE_RPC_VERSION_MAJOR, CORE_RPC_VERSION_MINOR)
 
@@ -469,6 +469,7 @@ constexpr char const CORE_RPC_STATUS_TX_LONG_POLL_MAX_CONNECTIONS[] = "Daemon ma
       bool in_pool;                         // States if the transaction is in pool (`true`) or included in a block (`false`).
       bool double_spend_seen;               // States if the transaction is a double-spend (`true`) or not (`false`).
       uint64_t block_height;                // Block height including the transaction.
+      uint64_t confirmations;
       uint64_t block_timestamp;             // Unix time at chich the block has been added to the blockchain.
       std::vector<uint64_t> output_indices; // List of transaction indexes.
       bool relayed;
@@ -487,6 +488,7 @@ constexpr char const CORE_RPC_STATUS_TX_LONG_POLL_MAX_CONNECTIONS[] = "Daemon ma
         {
           KV_SERIALIZE(block_height)
           KV_SERIALIZE(block_timestamp)
+          KV_SERIALIZE(confirmations)
           KV_SERIALIZE(output_indices)
         }
         else

@@ -96,6 +96,7 @@ namespace tools
     uint64_t pick();
     gamma_picker(const std::vector<uint64_t> &rct_offsets);
     gamma_picker(const std::vector<uint64_t> &rct_offsets, double shape, double scale);
+    uint64_t get_num_rct_outs() const { return num_rct_outputs; }
 
   private:
     struct gamma_engine
@@ -1203,8 +1204,6 @@ private:
     void segregation_height(uint64_t height) { m_segregation_height = height; }
     bool ignore_fractional_outputs() const { return m_ignore_fractional_outputs; }
     void ignore_fractional_outputs(bool value) { m_ignore_fractional_outputs = value; }
-    bool confirm_non_default_ring_size() const { return m_confirm_non_default_ring_size; }
-    void confirm_non_default_ring_size(bool always) { m_confirm_non_default_ring_size = always; }
     bool track_uses() const { return m_track_uses; }
     void track_uses(bool value) { m_track_uses = value; }
     BackgroundMiningSetupType setup_background_mining() const { return m_setup_background_mining; }
