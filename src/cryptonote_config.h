@@ -137,6 +137,8 @@ static_assert(BLINK_BURN_TX_FEE_PERCENT >= 0, "blink burn tx percent cannot be n
 #define COMMAND_RPC_GET_CHECKPOINTS_MAX_COUNT           256
 #define COMMAND_RPC_GET_QUORUM_STATE_MAX_COUNT          256
 
+#define MAX_RPC_CONTENT_LENGTH                          1048576 // 1 MB
+
 #define P2P_LOCAL_WHITE_PEERLIST_LIMIT                  1000
 #define P2P_LOCAL_GRAY_PEERLIST_LIMIT                   5000
 
@@ -195,6 +197,11 @@ static_assert(BLINK_BURN_TX_FEE_PERCENT >= 0, "blink burn tx percent cannot be n
 #define CRYPTONOTE_PRUNING_TIP_BLOCKS           5500 // the smaller, the more space saved
 //#define CRYPTONOTE_PRUNING_DEBUG_SPOOF_SEED
 
+//The limit is enough for the mandatory transaction content with 16 outputs (547 bytes),
+//a custom tag (1 byte) and up to 32 bytes of custom data for each recipient.
+// (1+32) + (1+1+16*32) + (1+16*32) = 1060
+#define MAX_TX_EXTRA_SIZE                       1060
+
 // New constants are intended to go here
 namespace config
 {
@@ -240,6 +247,7 @@ namespace config
   const unsigned char HASH_KEY_RPC_PAYMENT_NONCE = 0x58;
   const unsigned char HASH_KEY_MEMORY = 'k';
   const unsigned char HASH_KEY_MULTISIG[] = {'M', 'u', 'l', 't' , 'i', 's', 'i', 'g', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+  const unsigned char HASH_KEY_TXPROOF_V2[] = "TXPROOF_V2";
 
   namespace testnet
   {

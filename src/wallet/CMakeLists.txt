@@ -49,7 +49,6 @@ target_link_libraries(wallet
     Boost::filesystem
     Boost::thread
   PRIVATE
-    OpenSSL::SSL
     extra)
 
 guus_add_executable(wallet_rpc_server "guus-wallet-rpc"

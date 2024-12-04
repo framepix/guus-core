@@ -5609,7 +5609,6 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
         else
           dust_not_in_fee += ptx_vector[n].dust;
       }
-
       std::stringstream prompt;
       std::set<uint32_t> subaddr_indices;
       for (size_t n = 0; n < ptx_vector.size(); ++n)
@@ -5645,9 +5644,12 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
         prompt << boost::format(tr(".\nThis transaction (including %s change) will unlock on block %llu, in approximately %s days (assuming 2 minutes per block)")) % cryptonote::print_money(change) % ((unsigned long long)unlock_block) % days;
       }
 
+      if (m_wallet->print_ring_members())
+      {
         if (!print_ring_members(ptx_vector, prompt))
           return false;
       }
+
       prompt << ENDL << tr("Is this okay?");
 
       std::string accepted = input_line(prompt.str(), true);

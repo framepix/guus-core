@@ -152,6 +152,8 @@ namespace cryptonote
     if (rpc_config->login)
       http_login.emplace(std::move(rpc_config->login->username), std::move(rpc_config->login->password).password());
 
+    m_net_server.get_config_object().m_max_content_length = MAX_RPC_CONTENT_LENGTH;
+
     auto rng = [](size_t len, uint8_t *ptr){ return crypto::rand(len, ptr); };
     return epee::http_server_impl_base<core_rpc_server, connection_context>::init(
       rng, std::move(port), std::move(rpc_config->bind_ip),
@@ -893,6 +895,9 @@ namespace cryptonote
       std::string reason  = print_tx_verification_context  (tvc);
       reason             += print_vote_verification_context(vvc);
       res.tvc             = tvc;
+      if ((res.tx_extra_too_big = tvc.m_tx_extra_too_big)) {
+      res.reason = std::string{"tx-extra too big: "};
+      }
       const std::string punctuation = res.reason.empty() ? "" : ": ";
       if (tvc.m_verifivation_failed)
       {

@@ -932,7 +932,7 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
     rct_offsets(rct_offsets)
 {
   gamma = std::gamma_distribution<double>(shape, scale);
-  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE, error::wallet_internal_error, "Bad offset calculation");
+  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() < std::max(1, CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), error::wallet_internal_error, "Bad offset calculation");
   const size_t blocks_in_a_year = 86400 * 365 / DIFFICULTY_TARGET_V2;
   const size_t blocks_to_consider = std::min<size_t>(rct_offsets.size(), blocks_in_a_year);
   const size_t outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
@@ -5862,15 +5862,20 @@ std::map<uint32_t, uint64_t> wallet2::balance_per_subaddress(uint32_t index_majo
         amount_per_subaddr[0] = utx.second.m_change;
       else
         found->second += utx.second.m_change;
+      // add transfers to same wallet
+      for (const auto &dest: utx.second.m_dests) {
+        auto index = get_subaddress_index(dest.addr);
+        if (index && (*index).major == index_major)
+        {
+          auto found = amount_per_subaddr.find((*index).minor);
+          if (found == amount_per_subaddr.end())
+            amount_per_subaddr[(*index).minor] = dest.amount;
+          else
+            found->second += dest.amount;
+        }
+      }
     }
   }
-   for (const auto& utx: m_unconfirmed_payments)
-   {
-    if (utx.second.m_pd.m_subaddr_index.major == index_major)
-    {
-      amount_per_subaddr[utx.second.m_pd.m_subaddr_index.minor] += utx.second.m_pd.m_amount;
-    }
-   }
   return amount_per_subaddr;
 }
 //----------------------------------------------------------------------------------------------------
@@ -6751,6 +6756,22 @@ void wallet2::commit_tx(pending_tx& ptx, bool blink)
   crypto::hash txid;
 
   txid = get_transaction_hash(ptx.tx);
+ // if it's already processed, bail
+  if (std::find_if(m_transfers.begin(), m_transfers.end(), [&txid](const transfer_details &td) { return td.m_txid == txid; }) != m_transfers.end())
+  {
+    MDEBUG("Transaction " << txid << " already processed");
+    return;
+  }
+  if (m_unconfirmed_txs.find(txid) != m_unconfirmed_txs.end())
+  {
+    MDEBUG("Transaction " << txid << " already processed");
+    return;
+  }
+  if (m_confirmed_txs.find(txid) != m_confirmed_txs.end())
+  {
+    MDEBUG("Transaction " << txid << " already processed");
+    return;
+  }
   crypto::hash payment_id = crypto::null_hash;
   std::vector<cryptonote::tx_destination_entry> dests;
   uint64_t amount_in = 0;
@@ -8998,8 +9019,8 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       if (has_rct_distribution)
       {
         // check we're clear enough of rct start, to avoid corner cases below
-        THROW_WALLET_EXCEPTION_IF(rct_offsets.size() <= CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE,
-            error::get_output_distribution, "Not enough rct outputs");
+      THROW_WALLET_EXCEPTION_IF(rct_offsets.size() < std::max(1, CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE),
+          error::get_output_distribution, "Not enough rct outputs");
         THROW_WALLET_EXCEPTION_IF(rct_offsets.back() <= max_rct_index,
             error::get_output_distribution, "Daemon reports suspicious number of rct outputs");
       }
@@ -12248,7 +12269,7 @@ std::string wallet2::get_tx_proof(const cryptonote::transaction &tx, const crypt
         hwdev.generate_tx_proof(prefix_hash, tx_pub_key, address.m_view_public_key, boost::none, shared_secret[i], additional_tx_keys[i - 1], sig[i]);
       }
     }
-    sig_str = std::string("OutProofV1");
+    sig_str = std::string("OutProofV2");
   }
   else
   {
@@ -12284,7 +12305,7 @@ std::string wallet2::get_tx_proof(const cryptonote::transaction &tx, const crypt
         hwdev.generate_tx_proof(prefix_hash, address.m_view_public_key, additional_tx_pub_keys[i - 1], boost::none, shared_secret[i], a, sig[i]);
       }
     }
-    sig_str = std::string("InProofV1");
+    sig_str = std::string("InProofV2");
   }
   const size_t num_sigs = shared_secret.size();
 
@@ -12358,7 +12379,11 @@ bool wallet2::check_tx_proof(const crypto::hash &txid, const cryptonote::account
 bool wallet2::check_tx_proof(const cryptonote::transaction &tx, const cryptonote::account_public_address &address, bool is_subaddress, const std::string &message, const std::string &sig_str, uint64_t &received) const
 {
   const bool is_out = sig_str.substr(0, 3) == "Out";
-  const std::string header = is_out ? "OutProofV1" : "InProofV1";
+  const std::string header = is_out ? sig_str.substr(0,10) : sig_str.substr(0,9);
+  int version = 2; // InProofV2
+  if (is_out && sig_str.substr(8,2) == "V1") version = 1; // OutProofV1
+  else if (is_out) version = 2; // OutProofV2
+  else if (sig_str.substr(7,2) == "V1") version = 1; // InProofV1
   const size_t header_len = header.size();
   THROW_WALLET_EXCEPTION_IF(sig_str.size() < header_len || sig_str.substr(0, header_len) != header, error::wallet_internal_error,
     "Signature header check error");
@@ -12405,27 +12430,27 @@ bool wallet2::check_tx_proof(const cryptonote::transaction &tx, const cryptonote
   if (is_out)
   {
     good_signature[0] = is_subaddress ?
-      crypto::check_tx_proof(prefix_hash, tx_pub_key, address.m_view_public_key, address.m_spend_public_key, shared_secret[0], sig[0]) :
-      crypto::check_tx_proof(prefix_hash, tx_pub_key, address.m_view_public_key, boost::none, shared_secret[0], sig[0]);
+      crypto::check_tx_proof(prefix_hash, tx_pub_key, address.m_view_public_key, address.m_spend_public_key, shared_secret[0], sig[0], version) :
+      crypto::check_tx_proof(prefix_hash, tx_pub_key, address.m_view_public_key, boost::none, shared_secret[0], sig[0], version);
 
     for (size_t i = 0; i < additional_tx_pub_keys.size(); ++i)
     {
       good_signature[i + 1] = is_subaddress ?
-        crypto::check_tx_proof(prefix_hash, additional_tx_pub_keys[i], address.m_view_public_key, address.m_spend_public_key, shared_secret[i + 1], sig[i + 1]) :
-        crypto::check_tx_proof(prefix_hash, additional_tx_pub_keys[i], address.m_view_public_key, boost::none, shared_secret[i + 1], sig[i + 1]);
+        crypto::check_tx_proof(prefix_hash, additional_tx_pub_keys[i], address.m_view_public_key, address.m_spend_public_key, shared_secret[i + 1], sig[i + 1], version) :
+        crypto::check_tx_proof(prefix_hash, additional_tx_pub_keys[i], address.m_view_public_key, boost::none, shared_secret[i + 1], sig[i + 1], version);
     }
   }
   else
   {
     good_signature[0] = is_subaddress ?
-      crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, address.m_spend_public_key, shared_secret[0], sig[0]) :
-      crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, boost::none, shared_secret[0], sig[0]);
+      crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, address.m_spend_public_key, shared_secret[0], sig[0], version) :
+      crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, boost::none, shared_secret[0], sig[0], version);
 
     for (size_t i = 0; i < additional_tx_pub_keys.size(); ++i)
     {
       good_signature[i + 1] = is_subaddress ?
-        crypto::check_tx_proof(prefix_hash, address.m_view_public_key, additional_tx_pub_keys[i], address.m_spend_public_key, shared_secret[i + 1], sig[i + 1]) :
-        crypto::check_tx_proof(prefix_hash, address.m_view_public_key, additional_tx_pub_keys[i], boost::none, shared_secret[i + 1], sig[i + 1]);
+        crypto::check_tx_proof(prefix_hash, address.m_view_public_key, additional_tx_pub_keys[i], address.m_spend_public_key, shared_secret[i + 1], sig[i + 1], version) :
+        crypto::check_tx_proof(prefix_hash, address.m_view_public_key, additional_tx_pub_keys[i], boost::none, shared_secret[i + 1], sig[i + 1], version);
     }
   }
 
@@ -12563,7 +12588,7 @@ std::string wallet2::get_reserve_proof(const boost::optional<std::pair<uint32_t,
   std::ostringstream oss;
   boost::archive::portable_binary_oarchive ar(oss);
   ar << proofs << subaddr_spendkeys;
-  return "ReserveProofV1" + tools::base58::encode(oss.str());
+  return "ReserveProofV2" + tools::base58::encode(oss.str());
 }
 
 bool wallet2::check_reserve_proof(const cryptonote::account_public_address &address, const std::string &message, const std::string &sig_str, uint64_t &total, uint64_t &spent)
@@ -12571,13 +12596,18 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
   uint32_t rpc_version;
   THROW_WALLET_EXCEPTION_IF(!check_connection(&rpc_version), error::wallet_internal_error, "Failed to connect to daemon: " + get_daemon_address());
   THROW_WALLET_EXCEPTION_IF(rpc_version < MAKE_CORE_RPC_VERSION(1, 0), error::wallet_internal_error, "Daemon RPC version is too old");
-
-  static constexpr char header[] = "ReserveProofV1";
-  THROW_WALLET_EXCEPTION_IF(!boost::string_ref{sig_str}.starts_with(header), error::wallet_internal_error,
-    "Signature header check error");
-
   std::string sig_decoded;
-  THROW_WALLET_EXCEPTION_IF(!tools::base58::decode(sig_str.substr(std::strlen(header)), sig_decoded), error::wallet_internal_error,
+  static constexpr char header_v1[] = "ReserveProofV1";
+  static constexpr char header_v2[] = "ReserveProofV2"; // assumes same length as header_v1
+  THROW_WALLET_EXCEPTION_IF(!boost::string_ref{sig_str}.starts_with(header_v1) && !boost::string_ref{sig_str}.starts_with(header_v2), error::wallet_internal_error,
+    "Signature decoding error");
+  int version = 2; // assume newest version
+  if (boost::string_ref{sig_str}.starts_with(header_v1))
+      version = 1;
+  else if (boost::string_ref{sig_str}.starts_with(header_v2))
+      version = 2;
+
+  THROW_WALLET_EXCEPTION_IF(!tools::base58::decode(sig_str.substr(std::strlen(header_v1)), sig_decoded), error::wallet_internal_error,
     "Signature decoding error");
 
   std::istringstream iss(sig_decoded);
@@ -12667,7 +12697,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
 
       for (crypto::public_key const &tx_pub_key : main_keys)
       {
-        ok = crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, boost::none, proof.shared_secret, proof.shared_secret_sig);
+        ok = crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, boost::none, proof.shared_secret, proof.shared_secret_sig, version);
         if (ok) break;
       }
     }
@@ -12675,14 +12705,14 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
     {
       const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
       THROW_WALLET_EXCEPTION_IF(tx_pub_key == crypto::null_pkey, error::wallet_internal_error, "The tx public key isn't found");
-      ok = crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, boost::none, proof.shared_secret, proof.shared_secret_sig);
+      ok = crypto::check_tx_proof(prefix_hash, address.m_view_public_key, tx_pub_key, boost::none, proof.shared_secret, proof.shared_secret_sig, version);
     }
 
     if (!ok)
     {
       const std::vector<crypto::public_key> additional_tx_pub_keys = get_additional_tx_pub_keys_from_extra(tx);
       if (additional_tx_pub_keys.size() == tx.vout.size())
-        ok = crypto::check_tx_proof(prefix_hash, address.m_view_public_key, additional_tx_pub_keys[proof.index_in_tx], boost::none, proof.shared_secret, proof.shared_secret_sig);
+        ok = crypto::check_tx_proof(prefix_hash, address.m_view_public_key, additional_tx_pub_keys[proof.index_in_tx], boost::none, proof.shared_secret, proof.shared_secret_sig, version);
     }
 
     if (!ok)
