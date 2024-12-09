@@ -280,6 +280,27 @@ namespace cryptonote
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
+  static cryptonote::blobdata get_pruned_tx_blob(cryptonote::transaction &tx)
+  {
+    std::stringstream ss;
+    binary_archive<true> ba(ss);
+    bool r = tx.serialize_base(ba);
+    CHECK_AND_ASSERT_MES(r, cryptonote::blobdata(), "Failed to serialize rct signatures base");
+    return ss.str();
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
+  static cryptonote::blobdata get_pruned_tx_blob(const cryptonote::blobdata &blobdata)
+  {
+    cryptonote::transaction tx;
+
+    if (!cryptonote::parse_and_validate_tx_from_blob(blobdata, tx))
+    {
+      MERROR("Failed to parse and validate tx from blob");
+      return cryptonote::blobdata();
+    }
+    return get_pruned_tx_blob(tx);
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::on_get_net_stats(const COMMAND_RPC_GET_NET_STATS::request& req, COMMAND_RPC_GET_NET_STATS::response& res, const connection_context *ctx)
   {
     PERF_TIMER(on_get_net_stats);
@@ -715,14 +736,12 @@ namespace cryptonote
       if (e.in_pool)
       {
         e.block_height = e.block_timestamp = std::numeric_limits<uint64_t>::max();
-        e.confirmations = 0;
         e.double_spend_seen = ptx_it->second.double_spend_seen;
         e.relayed = ptx_it->second.relayed;
       }
       else
       {
         e.block_height = m_core.get_blockchain_storage().get_db().get_tx_block_height(tx_hash);
-        e.confirmations = m_core.get_current_blockchain_height() - e.block_height;
         e.block_timestamp = m_core.get_blockchain_storage().get_db().get_block_timestamp(e.block_height);
         e.double_spend_seen = false;
         e.relayed = false;

@@ -1,5 +1,5 @@
 // Copyright (c) 2014-2019, The Monero Project
-// 
+// Copyright (c)      2018-2023, The Oxen Project
 // 
 // All rights reserved.
 // 
@@ -52,6 +52,7 @@ using namespace epee;
 #include "misc_language.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "multisig/multisig.h"
+#include "common/dns_utils.h"
 #include "common/boost_serialization_helper.h"
 #include "common/command_line.h"
 #include "common/threadpool.h"
@@ -71,7 +72,6 @@ using namespace epee;
 #include "memwipe.h"
 #include "common/base58.h"
 #include "common/combinator.h"
-#include "common/dns_utils.h"
 #include "common/notify.h"
 #include "common/perf_timer.h"
 #include "ringct/rctSigs.h"
@@ -106,6 +106,7 @@ using namespace cryptonote;
 
 // used to target a given block weight (additional outputs may be added on top to build fee)
 #define TX_WEIGHT_TARGET(bytes) (bytes*2/3)
+
 
 
 #define UNSIGNED_TX_PREFIX "Guus unsigned tx set\004"
@@ -937,7 +938,7 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
   const size_t blocks_to_consider = std::min<size_t>(rct_offsets.size(), blocks_in_a_year);
   const size_t outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
   begin = rct_offsets.data();
-  end = rct_offsets.data() + rct_offsets.size() - (std::max(1, CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE) - 1);
+  end = rct_offsets.data() + rct_offsets.size() - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
   num_rct_outputs = *(end - 1);
   THROW_WALLET_EXCEPTION_IF(num_rct_outputs == 0, error::wallet_internal_error, "No rct outputs");
   average_output_time = DIFFICULTY_TARGET_V2 * blocks_to_consider / outputs_to_consider; // this assumes constant target over the whole rct range
@@ -2495,10 +2496,6 @@ void wallet2::process_new_blockchain_entry(const cryptonote::block& b, const cry
       "block transactions=" + std::to_string(bche.txs.size()) +
       " not match with daemon response size=" + std::to_string(parsed_block.o_indices.indices.size()));
 
-  THROW_WALLET_EXCEPTION_IF(height != m_blockchain.size(), error::wallet_internal_error,
-      "New blockchain entry mismatch: block height " + std::to_string(height) +
-      " is not the expected next height " + std::to_string(m_blockchain.size()));
-
   //handle transactions from new block
     
   //optimization: seeking only for blocks that are not older then the wallet creation time plus 1 day. 1 day is for possible user incorrect time setup
@@ -2615,13 +2612,13 @@ void wallet2::pull_hashes(uint64_t start_height, uint64_t &blocks_start_height, 
   hashes = std::move(res.m_block_ids);
 }
 //----------------------------------------------------------------------------------------------------
-void wallet2::process_parsed_blocks(const uint64_t start_height, const std::vector<cryptonote::block_complete_entry> &blocks, const std::vector<parsed_block> &parsed_blocks, uint64_t& blocks_added, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache)
+void wallet2::process_parsed_blocks(uint64_t start_height, const std::vector<cryptonote::block_complete_entry> &blocks, const std::vector<parsed_block> &parsed_blocks, uint64_t& blocks_added, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache)
 {
   size_t current_index = start_height;
   blocks_added = 0;
 
   THROW_WALLET_EXCEPTION_IF(blocks.size() != parsed_blocks.size(), error::wallet_internal_error, "size mismatch");
-  THROW_WALLET_EXCEPTION_IF(!m_blockchain.is_in_bounds(start_height), error::out_of_hashchain_bounds_error);
+  THROW_WALLET_EXCEPTION_IF(!m_blockchain.is_in_bounds(current_index), error::out_of_hashchain_bounds_error);
 
   tools::threadpool& tpool = tools::threadpool::getInstance();
   tools::threadpool::waiter waiter;
@@ -2632,22 +2629,8 @@ void wallet2::process_parsed_blocks(const uint64_t start_height, const std::vect
     num_txes += 1 + parsed_blocks[i].txes.size();
   tx_cache_data.resize(num_txes);
   size_t txidx = 0;
-  crypto::hash prev_block_id;
-  bool has_prev_block = m_blockchain.is_in_bounds(start_height - 1);
-  if (has_prev_block) {
-    prev_block_id = m_blockchain[start_height - 1];
-  }
   for (size_t i = 0; i < blocks.size(); ++i)
   {
-    if (has_prev_block) {
-      THROW_WALLET_EXCEPTION_IF(prev_block_id != parsed_blocks[i].block.prev_id, error::wallet_internal_error,
-          "Parent block hash mismatch at height " + std::to_string(start_height + i) +
-          ": expected " + string_tools::pod_to_hex(prev_block_id) +
-          ", but received a new block with prev_id " + string_tools::pod_to_hex(parsed_blocks[i].block.prev_id));
-    }
-    prev_block_id = parsed_blocks[i].hash;
-    has_prev_block = true;
-
     THROW_WALLET_EXCEPTION_IF(parsed_blocks[i].txes.size() != parsed_blocks[i].block.tx_hashes.size(),
         error::wallet_internal_error, "Mismatched parsed_blocks[i].txes.size() and parsed_blocks[i].block.tx_hashes.size()");
     if (should_skip_block(parsed_blocks[i].block, start_height + i))
@@ -2745,7 +2728,6 @@ void wallet2::process_parsed_blocks(const uint64_t start_height, const std::vect
   waiter.wait(&tpool);
   hwdev.set_mode(hw::device::NONE);
 
-  current_index = start_height;
   size_t tx_cache_data_offset = 0;
   for (size_t i = 0; i < blocks.size(); ++i)
   {
@@ -3673,7 +3655,7 @@ void wallet2::detach_blockchain(uint64_t height, std::map<std::pair<uint64_t, ui
   }
   m_transfers.erase(it, m_transfers.end());
 
-  size_t blocks_detached = m_blockchain.size() - height;
+   const uint64_t  blocks_detached = m_blockchain.size() - height;
   m_blockchain.crop(height);
 
   for (auto it = m_payments.begin(); it != m_payments.end(); )
@@ -3691,6 +3673,9 @@ void wallet2::detach_blockchain(uint64_t height, std::map<std::pair<uint64_t, ui
     else
       ++it;
   }
+
+  if (m_callback)
+    m_callback->on_reorg(height, blocks_detached, transfers_detached);
 
   LOG_PRINT_L0("Detached blockchain on height " << height << ", transfers detached " << transfers_detached << ", blocks detached " << blocks_detached);
 }
@@ -3840,7 +3825,7 @@ bool wallet2::store_keys(const std::string& keys_file_name, const epee::wipeable
   value2.SetUint64(m_refresh_from_block_height);
   json.AddMember("refresh_height", value2, json.GetAllocator());
 
-  value2.SetInt(1);
+  value2.SetInt(1); // exists for deserialization backwards compatibility
   json.AddMember("confirm_non_default_ring_size", value2, json.GetAllocator());
 
   value2.SetInt(m_ask_password);
@@ -6210,7 +6195,7 @@ std::string wallet2::transfers_to_csv(const std::vector<transfer_view>& transfer
         running_balance -= transfer.amount + transfer.fee;
         break;
       default:
-        MERROR("Warning: Unhandled pay type, this is most likely a developer error, please report it to the Guus developers.");
+        MERROR("Warning: Unhandled pay type, this is most likely a developer error, please report it to the guus developers.");
         break;
     }
 
@@ -7749,7 +7734,6 @@ bool wallet2::get_ring(const crypto::key_image &key_image, std::vector<uint64_t>
   catch (const std::exception &e) { return false; }
 }
 
-
 bool wallet2::set_ring(const crypto::key_image &key_image, const std::vector<uint64_t> &outs, bool relative)
 {
   if (!m_ringdb)
@@ -7803,8 +7787,8 @@ bool wallet2::find_and_save_rings(bool force)
   if (!m_ringdb)
     return false;
 
-  COMMAND_RPC_GET_TRANSACTIONS::request req {};
-  COMMAND_RPC_GET_TRANSACTIONS::response res {};
+  COMMAND_RPC_GET_TRANSACTIONS::request req{};
+  COMMAND_RPC_GET_TRANSACTIONS::response res{};
 
   MDEBUG("Finding and saving rings...");
 
@@ -7861,7 +7845,6 @@ bool wallet2::find_and_save_rings(bool force)
   m_ring_history_saved = true;
   return true;
 }
-
 
 bool wallet2::blackball_output(const std::pair<uint64_t, uint64_t> &output)
 {
@@ -7989,7 +7972,7 @@ wallet2::stake_result wallet2::check_stake_allowed(const crypto::public_key& sn_
   if (max_contrib_total == 0)
   {
     result.status = stake_result_status::frame_pix_contribution_maxed;
-    result.msg = tr("The service node cannot receive any more Guus from this wallet");
+    result.msg = tr("The service node cannot receive any more guus from this wallet");
     return result;
   }
 
@@ -8096,7 +8079,7 @@ wallet2::stake_result wallet2::create_stake_tx(const crypto::public_key& frame_p
     if (priority == tx_priority_blink)
     {
       result.status = stake_result_status::no_blink;
-      result.msg += tr("Frame pix stakes cannot use blink priority");
+      result.msg += tr("Service node stakes cannot use blink priority");
       return result;
     }
 
@@ -8163,7 +8146,7 @@ wallet2::register_frame_pix_result wallet2::create_register_frame_pix_tx(const s
     if (priority == tx_priority_blink)
     {
       result.status = register_frame_pix_result_status::no_blink;
-      result.msg += tr("Frame pix registrations cannot use blink priority");
+      result.msg += tr("Service node registrations cannot use blink priority");
       return result;
     }
 
@@ -8228,7 +8211,7 @@ wallet2::register_frame_pix_result wallet2::create_register_frame_pix_tx(const s
     result.status = register_frame_pix_result_status::first_address_must_be_primary_address;
     result.msg = tr(
                     "The first reserved address for this registration does not belong to this wallet.\n"
-                    "Frame pix operator must specify an address owned by this wallet for service node registration."
+                    "Service node operator must specify an address owned by this wallet for service node registration."
                    );
     return result;
   }
@@ -8544,7 +8527,7 @@ static lns_prepared_args prepare_tx_extra_guus_name_system_values(wallet2 const 
   lns_prepared_args result = {};
   if (priority == tools::tx_priority_blink)
   {
-    if (reason) *reason = "Can not request a blink TX for Guus Name Service transactions";
+    if (reason) *reason = "Can not request a blink TX for guus Name Service transactions";
     return result;
   }
 
@@ -9035,7 +9018,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
     {
       MWARNING("More than 5% of outputs are blacklisted ("
                << output_blacklist.size() << "/" << rct_offsets.size()
-               << "), please notify the Guus developers");
+               << "), please notify the guus developers");
     }
 
     if (!req_t.amounts.empty())
@@ -9189,7 +9172,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       else
       {
         // the base offset of the first rct output in the first unlocked block (or the one to be if there's none)
-        num_outs = gamma->get_num_rct_outs();
+        num_outs = rct_offsets[rct_offsets.size() - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE];
         LOG_PRINT_L1("" << num_outs << " unlocked rct outputs");
         THROW_WALLET_EXCEPTION_IF(num_outs == 0, error::wallet_internal_error,
             "histogram reports no unlocked rct outputs, not even ours");
@@ -9224,12 +9207,12 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       {
         std::vector<uint64_t> ring;
         if (get_ring(get_ringdb_key(), td.m_key_image, ring))
-        {
+        {/*
           MINFO("This output has a known ring, reusing (size " << ring.size() << ")");
           THROW_WALLET_EXCEPTION_IF(ring.size() > fake_outputs_count + 1, error::wallet_internal_error,
               "An output in this transaction was previously spent on another chain with ring size " +
               std::to_string(ring.size()) + ", it cannot be spent now with ring size " +
-              std::to_string(fake_outputs_count + 1) + " as it is smaller: use a higher ring size");
+              std::to_string(fake_outputs_count + 1) + " as it is smaller: use a higher ring size");*/
           bool own_found = false;
           for (const auto &out: ring)
           {
@@ -9251,8 +9234,8 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
               MINFO("Ignoring output " << out << ", too recent");
             }
           }
-          THROW_WALLET_EXCEPTION_IF(!own_found, error::wallet_internal_error,
-              "Known ring does not include the spent output: " + std::to_string(td.m_global_output_index));
+          /*THROW_WALLET_EXCEPTION_IF(!own_found, error::wallet_internal_error,
+              "Known ring does not include the spent output: " + std::to_string(td.m_global_output_index));*/
         }
       }
 
@@ -9457,7 +9440,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
       }
       bool use_histogram = amount != 0 || !has_rct_distribution;
       if (!use_histogram)
-        num_outs = gamma->get_num_rct_outs();
+        num_outs = rct_offsets[rct_offsets.size() - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE];
 
       // make sure the real outputs we asked for are really included, along
       // with the correct key and mask: this guards against an active attack
@@ -9472,8 +9455,7 @@ void wallet2::get_outs(std::vector<std::vector<tools::wallet2::get_outs_entry>> 
           if (daemon_resp.outs[i].key == boost::get<txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target).key)
             if (daemon_resp.outs[i].mask == mask)
             {
-              if (daemon_resp.outs[i].unlocked)
-                real_out_found = true;
+              real_out_found = true;
               break;
             }
       }
@@ -10483,7 +10465,7 @@ bool wallet2::light_wallet_key_image_is_ours(const crypto::key_image& key_image,
 }
 
 // Before we have the final fee we can't determine the amount to burn, so we stick in this
-// placeholder then go back once we know the fee and replace it.  This value (~4398 GUUS) was chosen
+// placeholder then go back once we know the fee and replace it.  This value (~4398 guus) was chosen
 // because it's unlikely to ever be needed to be burned in a single transaction, and is the maximum
 // encoded value we can store in 6 bytes (tx extra integers are encoded 7 bits per byte -- see
 // common/varint.h).  7 bytes is likely just wasteful (we don't need more than 4400 GUUS burned at a
@@ -11507,7 +11489,7 @@ bool wallet2::use_fork_rules(uint8_t version, uint64_t early_blocks) const
   // TODO: How to get fork rule info from light wallet node?
   if(m_light_wallet)
     return true;
-  uint64_t height, earliest_height;
+  uint64_t height, earliest_height{0};
   boost::optional<std::string> result = m_node_rpc_proxy.get_height(height);
   throw_on_rpc_response_error(result, "get_info");
   result = m_node_rpc_proxy.get_earliest_height(version, earliest_height);
@@ -11637,14 +11619,14 @@ const wallet2::transfer_details &wallet2::get_transfer_details(size_t idx) const
 std::vector<size_t> wallet2::select_available_unmixable_outputs()
 {
   // request all outputs with not enough available mixins
-  constexpr size_t min_mixin = 16;
+  constexpr size_t min_mixin = 9;
   return select_available_outputs_from_histogram(min_mixin + 1, false, true, false);
 }
 //----------------------------------------------------------------------------------------------------
 std::vector<size_t> wallet2::select_available_mixable_outputs()
 {
   // request all outputs with at least 10nstances, so we can use mixin 9 with
-  constexpr size_t min_mixin = 16;
+  constexpr size_t min_mixin = 9;
   return select_available_outputs_from_histogram(min_mixin + 1, true, true, true);
 }
 //----------------------------------------------------------------------------------------------------
@@ -12117,8 +12099,6 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
 
 void wallet2::check_tx_key_helper(const crypto::hash &txid, const crypto::key_derivation &derivation, const std::vector<crypto::key_derivation> &additional_derivations, const cryptonote::account_public_address &address, uint64_t &received, bool &in_pool, uint64_t &confirmations)
 {
-  uint32_t rpc_version;
-  THROW_WALLET_EXCEPTION_IF(!check_connection(&rpc_version), error::wallet_internal_error, "Failed to connect to daemon: " + get_daemon_address());
   COMMAND_RPC_GET_TRANSACTIONS::request req;
   COMMAND_RPC_GET_TRANSACTIONS::response res;
   req.txs_hashes.push_back(epee::string_tools::pod_to_hex(txid));
@@ -12158,17 +12138,10 @@ void wallet2::check_tx_key_helper(const crypto::hash &txid, const crypto::key_de
   confirmations = 0;
   if (!in_pool)
   {
-    if (rpc_version < MAKE_CORE_RPC_VERSION(3, 7))
-    {
-      std::string err;
-      uint64_t bc_height = get_daemon_blockchain_height(err);
-      if (err.empty() && bc_height > res.txs.front().block_height)
-        confirmations = bc_height - res.txs.front().block_height;
-    }
-    else
-    {
-      confirmations = res.txs.front().confirmations;
-    }
+    std::string err;
+    uint64_t bc_height = get_daemon_blockchain_height(err);
+    if (err.empty())
+      confirmations = bc_height - res.txs.front().block_height;
   }
 }
 
@@ -12378,6 +12351,7 @@ bool wallet2::check_tx_proof(const crypto::hash &txid, const cryptonote::account
 
 bool wallet2::check_tx_proof(const cryptonote::transaction &tx, const cryptonote::account_public_address &address, bool is_subaddress, const std::string &message, const std::string &sig_str, uint64_t &received) const
 {
+  // InProofV1, InProofV2, OutProofV1, OutProofV2
   const bool is_out = sig_str.substr(0, 3) == "Out";
   const std::string header = is_out ? sig_str.substr(0,10) : sig_str.substr(0,9);
   int version = 2; // InProofV2
@@ -12596,17 +12570,20 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
   uint32_t rpc_version;
   THROW_WALLET_EXCEPTION_IF(!check_connection(&rpc_version), error::wallet_internal_error, "Failed to connect to daemon: " + get_daemon_address());
   THROW_WALLET_EXCEPTION_IF(rpc_version < MAKE_CORE_RPC_VERSION(1, 0), error::wallet_internal_error, "Daemon RPC version is too old");
-  std::string sig_decoded;
+
+
   static constexpr char header_v1[] = "ReserveProofV1";
   static constexpr char header_v2[] = "ReserveProofV2"; // assumes same length as header_v1
   THROW_WALLET_EXCEPTION_IF(!boost::string_ref{sig_str}.starts_with(header_v1) && !boost::string_ref{sig_str}.starts_with(header_v2), error::wallet_internal_error,
-    "Signature decoding error");
+    "Signature header check error");
+
   int version = 2; // assume newest version
   if (boost::string_ref{sig_str}.starts_with(header_v1))
       version = 1;
   else if (boost::string_ref{sig_str}.starts_with(header_v2))
       version = 2;
 
+  std::string sig_decoded;
   THROW_WALLET_EXCEPTION_IF(!tools::base58::decode(sig_str.substr(std::strlen(header_v1)), sig_decoded), error::wallet_internal_error,
     "Signature decoding error");
 

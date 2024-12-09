@@ -1,5 +1,5 @@
 // Copyright (c) 2019, The Monero Project
-// 
+// Copyright (c)      2018-2023, The Oxen Project
 // 
 // All rights reserved.
 // 
@@ -98,6 +98,7 @@ std::string get_rings_filename(boost::filesystem::path filename)
 static crypto::chacha_iv make_iv(const crypto::key_image &key_image, const crypto::chacha_key &key, uint8_t field)
 {
   uint8_t buffer[sizeof(key_image) + sizeof(key) + sizeof(config::HASH_KEY_RINGDB) + sizeof(field)];
+
   memcpy(buffer, &key_image, sizeof(key_image));
   memcpy(buffer + sizeof(key_image), &key, sizeof(key));
   memcpy(buffer + sizeof(key_image) + sizeof(key), config::HASH_KEY_RINGDB, sizeof(config::HASH_KEY_RINGDB));
@@ -359,7 +360,7 @@ bool ringdb::get_ring(const crypto::chacha_key &chacha_key, const crypto::key_im
     return false;
   THROW_WALLET_EXCEPTION_IF(data.mv_size <= 0, tools::error::wallet_internal_error, "Invalid ring data size");
 
-  std::string data_plaintext = decrypt(std::string((const char*)data.mv_data, data.mv_size), key_image, chacha_key, 0);
+  std::string data_plaintext = decrypt(std::string((const char*)data.mv_data, data.mv_size), key_image, chacha_key, 1);
   outs = decompress_ring(data_plaintext);
   MDEBUG("Found ring for key image " << key_image << ":");
   MDEBUG("Relative: " << boost::join(outs | boost::adaptors::transformed([](uint64_t out){return std::to_string(out);}), " "));
