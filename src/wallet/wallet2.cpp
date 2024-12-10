@@ -40,6 +40,12 @@
 #include <boost/asio/ip/address.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 #include <boost/preprocessor/stringize.hpp>
+#include <fstream>
+#include <sstream>
+#include <iostream>
+#include <openssl/sha.h> 
+#include <boost/filesystem.hpp>
+
 #include "include_base_utils.h"
 using namespace epee;
 
@@ -216,6 +222,66 @@ namespace
     }
   }
 }
+
+    // Compute the hash of the file
+    std::string compute_file_hash(const std::vector<uint8_t>& file_content) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, file_content.data(), file_content.size());
+    SHA256_Final(hash, &sha256);
+
+    std::stringstream ss;
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
+    }
+
+    return ss.str();
+   }
+
+    // Determine the file type based on the extension
+    std::string get_file_type(const std::string& file_path) {
+    boost::filesystem::path p(file_path);
+    std::string ext = p.extension().string();
+    if (ext.size() > 1) {
+        ext = ext.substr(1); // Remove the dot
+    }
+    return ext;
+    }
+
+   bool wallet2::load_file_data(const std::string& file_path, cryptonote::tx_extra_file_data& file_data) {
+    // Open the file
+    std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        MERROR("Failed to open file: " << file_path);
+        return false;
+    }
+
+    // Get the file size
+    std::streamsize file_size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // Read the file content
+    std::vector<uint8_t> file_content(file_size);
+    if (!file.read(reinterpret_cast<char*>(file_content.data()), file_size)) {
+        MERROR("Failed to read file: " << file_path);
+        return false;
+    }
+
+    // Close the file
+    file.close();
+
+    // Compute the file hash
+    file_data.file_hash = compute_file_hash(file_content);
+
+    // Get the file type
+    file_data.file_type = get_file_type(file_path);
+
+    // Set the file content
+    file_data.file_content = file_content;
+
+    return true;
+    }
 
 namespace
 {

@@ -211,7 +211,7 @@ namespace rpc
 
       res.txs.emplace(found_hashes[i], std::move(info));
     }
-                                      
+
     res.missed_hashes = std::move(missed_vec);
     res.status = Message::STATUS_OK;
   }

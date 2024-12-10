@@ -438,6 +438,26 @@ namespace cryptonote
     return addr.m_view_public_key;
   }
   //---------------------------------------------------------------
+   bool add_file_to_tx(cryptonote::transaction& tx, const tx_extra_file_data& file_data) {
+    if (file_data.file_content.size() > MAX_FILE_SIZE) {
+        MERROR("File size exceeds the maximum allowed size.");
+        return false;
+    }
+
+    if (std::find(ALLOWED_FILE_TYPES.begin(), ALLOWED_FILE_TYPES.end(), file_data.file_type) == ALLOWED_FILE_TYPES.end()) {
+        MERROR("File type is not allowed.");
+        return false;
+    }
+
+    std::vector<uint8_t> tx_extra;
+    if (!add_tx_extra(tx, file_data)) {
+        MERROR("Failed to add file data to tx_extra.");
+        return false;
+    }
+
+    return true;
+   }
+   //-----------------------------------------------------------------
   bool construct_tx_with_tx_key(const account_keys& sender_account_keys, const std::unordered_map<crypto::public_key, subaddress_index>& subaddresses, std::vector<tx_source_entry>& sources, std::vector<tx_destination_entry>& destinations, const boost::optional<tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys, const rct::RCTConfig &rct_config, rct::multisig_out *msout, bool shuffle_outs, guus_construct_tx_params const &tx_params)
   {
     hw::device &hwdev = sender_account_keys.get_device();

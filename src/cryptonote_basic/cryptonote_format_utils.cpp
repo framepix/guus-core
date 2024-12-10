@@ -264,6 +264,22 @@ namespace cryptonote
     return true;
   }
   //---------------------------------------------------------------
+   bool check_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_file_data& file_data) {
+    std::vector<tx_extra_field> tx_extra_fields;
+    if (!parse_tx_extra(tx_extra, tx_extra_fields)) {
+        return false;
+    }
+
+    for (const auto& field : tx_extra_fields) {
+        if (field.type() == typeid(tx_extra_file_data)) {
+            file_data = boost::get<tx_extra_file_data>(field);
+            return true;
+        }
+    }
+
+    return false;
+   }
+  //----------------------------------------------------------------------
   bool is_v1_tx(const blobdata_ref& tx_blob)
   {
     uint64_t version;

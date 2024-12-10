@@ -25,6 +25,20 @@ namespace rpc
     }
   }
 
+  void RpcHandler::register_rpc_commands() {
+      m_server->add_rpc_command("add_file_to_tx", [this](const json_rpc_request& req) -> json_rpc_response {
+        COMMAND_RPC_ADD_FILE_TO_TX::request_t request;
+        request.file_path = req.params["file_path"].get<std::string>();
+
+        COMMAND_RPC_ADD_FILE_TO_TX::response_t response;
+        if (on_add_file_to_tx(request, response)) {
+            return json_rpc_response::ok(req.id, response);
+        } else {
+            return json_rpc_response::error(req.id, response.status);
+        }
+    });
+
+  }
   boost::optional<output_distribution_data>
     RpcHandler::get_output_distribution(const std::function<bool(uint64_t, uint64_t, uint64_t, uint64_t&, std::vector<uint64_t>&, uint64_t&)> &f, uint64_t amount, uint64_t from_height, uint64_t to_height, const std::function<crypto::hash(uint64_t)> &get_hash, bool cumulative, uint64_t blockchain_height)
   {

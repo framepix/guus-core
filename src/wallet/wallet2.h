@@ -68,6 +68,9 @@
 
 #include "common/guus_integration_test_hooks.h"
 
+#include <vector>
+#include <string>
+
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "wallet.wallet2"
 
@@ -80,6 +83,11 @@ class wallet_accessor_test;
 GUUS_RPC_DOC_INTROSPECT
 namespace tools
 {
+  // Forward declaration for tx_extra_file_data
+  namespace cryptonote
+  {
+  struct tx_extra_file_data;
+  }
   static const char *ERR_MSG_NETWORK_VERSION_QUERY_FAILED = tr("Could not query the current network version, try later");
   static const char *ERR_MSG_NETWORK_HEIGHT_QUERY_FAILED = tr("Could not query the current network block height, try later: ");
   static const char *ERR_MSG_FRAME_PIX_LIST_QUERY_FAILED = tr("Failed to query daemon for service node list");
@@ -328,6 +336,8 @@ private:
     friend class wallet_keys_unlocker;
     friend class wallet_device_callback;
   public:
+    // Load file data from a given file path
+    bool load_file_data(const std::string& file_path, cryptonote::tx_extra_file_data& file_data);
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
     enum RefreshType {
       RefreshFull,
@@ -1560,6 +1570,10 @@ private:
     uint64_t get_bytes_sent() const;
     uint64_t get_bytes_received() const;
 
+    // Compute the hash of the file content
+    std::string compute_file_hash(const std::vector<uint8_t>& file_content);
+    // Determine the file type based on the extension
+    std::string get_file_type(const std::string& file_path);
     // MMS -------------------------------------------------------------------------------------------------
     mms::message_store& get_message_store() { return m_message_store; };
     const mms::message_store& get_message_store() const { return m_message_store; };

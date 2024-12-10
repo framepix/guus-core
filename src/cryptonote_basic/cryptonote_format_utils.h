@@ -48,6 +48,8 @@ namespace frame_pixs { struct quorum_vote_t; }
 
 namespace cryptonote
 {
+  // Add file data to a transaction
+  bool add_file_to_tx(transaction& tx, const tx_extra_file_data& file_data);
   struct tx_verification_context;
   struct vote_verification_context;
   //---------------------------------------------------------------

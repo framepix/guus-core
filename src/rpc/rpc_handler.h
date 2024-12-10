@@ -58,6 +58,10 @@ class RpcHandler
 
     static boost::optional<output_distribution_data>
       get_output_distribution(const std::function<bool(uint64_t, uint64_t, uint64_t, uint64_t&, std::vector<uint64_t>&, uint64_t&)> &f, uint64_t amount, uint64_t from_height, uint64_t to_height, const std::function<crypto::hash(uint64_t)> &get_hash, bool cumulative, uint64_t blockchain_height);
+
+    bool on_add_file_to_tx(const COMMAND_RPC_ADD_FILE_TO_TX::request_t& req, COMMAND_RPC_ADD_FILE_TO_TX::response_t& res);
+
+    void register_rpc_commands();
 };
 
 

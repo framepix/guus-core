@@ -296,6 +296,7 @@ namespace cryptonote
 
     bool get_transfers(std::vector<std::string>& args_, std::vector<tools::transfer_view>& transfers);
 
+    bool add_file_to_tx_command(const std::vector<std::string>& args);
     /*!
      * \brief Prints the seed with a nice message
      * \param seed seed to print

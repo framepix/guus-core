@@ -98,6 +98,29 @@ constexpr char const CORE_RPC_STATUS_TX_LONG_POLL_MAX_CONNECTIONS[] = "Daemon ma
 #define MAKE_CORE_RPC_VERSION(major,minor) (((major)<<16)|(minor))
 #define CORE_RPC_VERSION MAKE_CORE_RPC_VERSION(CORE_RPC_VERSION_MAJOR, CORE_RPC_VERSION_MINOR)
 
+
+  GUUS_RPC_DOC_INTROSPECT
+  // Get the file.
+    struct COMMAND_RPC_ADD_FILE_TO_TX {
+        struct request_t {
+            std::string file_path;
+            BEGIN_KV_SERIALIZE_MAP()
+                KV_SERIALIZE(file_path)
+            END_KV_SERIALIZE_MAP()
+        };
+        typedef epee::misc_utils::struct_init<request_t> request;
+
+        struct response_t {
+            bool success;
+            std::string status;
+            BEGIN_KV_SERIALIZE_MAP()
+                KV_SERIALIZE(success)
+                KV_SERIALIZE(status)
+            END_KV_SERIALIZE_MAP()
+        };
+        typedef epee::misc_utils::struct_init<response_t> response;
+    };
+
   GUUS_RPC_DOC_INTROSPECT
   // Get the node's current height.
   struct COMMAND_RPC_GET_HEIGHT

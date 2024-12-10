@@ -275,6 +275,7 @@ namespace
   const char* USAGE_LNS_BUY_MAPPING("lns_buy_mapping [index=<N1>[,<N2>,...]] [<priority>] [owner=<value>] [backup_owner=<value>] <name> <value>");
   const char* USAGE_LNS_UPDATE_MAPPING("lns_update_mapping [index=<N1>[,<N2>,...]] [<priority>] [owner=<value>] [backup_owner=<value>] [value=<lns_value>] [signature=<hex_signature>] <name>");
 
+  const char* USAGE_ADD_FILE_TO_TX("add_file_to_tx <file_path>");
   // TODO(guus): Currently defaults to session, in future allow specifying Guusnet and Wallet when they are enabled
   const char* USAGE_LNS_MAKE_UPDATE_MAPPING_SIGNATURE("lns_make_update_mapping_signature [owner=<value>] [backup_owner=<value>] [value=<lns_value>] <name>");
   const char* USAGE_LNS_PRINT_OWNERS_TO_NAMES("lns_print_owners_to_names [<owner>, ...]");
@@ -2608,6 +2609,10 @@ simple_wallet::simple_wallet()
     , m_current_subaddress_account(0)
 {
   using namespace boost::placeholders;
+  m_cmd_binder.set_handler("add_file_to_tx",
+                           boost::bind(&simple_wallet::add_file_to_tx_command, this, _1),
+                           tr(USAGE_ADD_FILE_TO_TX),
+                           tr("Add a file to the transaction."));
   m_cmd_binder.set_handler("start_mining",
                            boost::bind(&simple_wallet::start_mining, this, _1),
                            tr(USAGE_START_MINING),
@@ -7114,6 +7119,72 @@ bool simple_wallet::sweep_main(uint64_t below, Transfer transfer_type, const std
   return true;
 }
 //----------------------------------------------------------------------------------------------------
+bool simple_wallet::add_file_to_tx_command(const std::vector<std::string>& args) {
+    if (args.size() < 1) {
+        fail_msg_writer() << tr("Usage: ") << USAGE_ADD_FILE_TO_TX;
+        return false;
+    }
+
+    std::string file_path = args[0];
+    cryptonote::tx_extra_file_data file_data;
+
+    // Load the file data
+    if (!m_wallet->load_file_data(file_path, file_data)) {
+        fail_msg_writer() << tr("Failed to load file data from: ") << file_path;
+        return false;
+    }
+
+    try {
+        // Create a new transaction
+        std::vector<tools::wallet2::pending_tx> ptx_vector;
+        cryptonote::transaction tx;
+        std::string err;
+
+        // Get the hard fork version
+        boost::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+        if (!hf_version) {
+            fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+            return false;
+        }
+
+        // Construct transaction parameters
+        guus_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::standard, m_wallet->get_default_priority());
+
+        // Create the transaction
+        std::vector<cryptonote::tx_destination_entry> dsts;
+        tx_extra extra;
+        if (!cryptonote::add_file_to_tx(tx, file_data)) {
+            fail_msg_writer() << tr("Failed to add file data to transaction.");
+            return false;
+        }
+
+        // Create the transactions
+        ptx_vector = m_wallet->create_transactions_2(dsts, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, m_wallet->get_default_priority(), extra, m_current_subaddress_account, {}, tx_params);
+
+        if (ptx_vector.empty()) {
+            fail_msg_writer() << tr("No outputs found, or daemon is not ready");
+            return false;
+        }
+
+        // Confirm and send the transactions
+        if (!confirm_and_send_tx({}, ptx_vector, m_wallet->get_default_priority() == tools::tx_priority_blink, 0, 0, false))
+            return false;
+
+        success_msg_writer() << tr("File data added to transaction and sent successfully.");
+    }
+    catch (const std::exception &e) {
+        handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+        return false;
+    }
+    catch (...) {
+        LOG_ERROR("unknown error");
+        fail_msg_writer() << tr("unknown error");
+        return false;
+    }
+
+    return true;
+}
+//----------------------------------------------------------------------
 bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
 {
   if (!try_connect_to_daemon())
@@ -9694,6 +9765,7 @@ int main(int argc, char* argv[])
   command_line::add_arg(desc_params, arg_generate_from_json);
   command_line::add_arg(desc_params, arg_mnemonic_language);
   command_line::add_arg(desc_params, arg_command);
+  command_line::add_arg(desc_params, arg_add_file_to_tx);
 
   command_line::add_arg(desc_params, arg_restore_deterministic_wallet );
   command_line::add_arg(desc_params, arg_restore_multisig_wallet );
