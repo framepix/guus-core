@@ -989,6 +989,73 @@ bool core_rpc_server::on_add_file_to_tx(const cryptonote::rpc::COMMAND_RPC_ADD_F
     return true;
   }
   //--------------------------------------------------------------------------------------------------------------
+  bool core_rpc_server::on_create_nft(const COMMAND_RPC_CREATE_NFT::request_t& req, COMMAND_RPC_CREATE_NFT::response_t& res) {
+    cryptonote::tx_extra_nft_data nft_data;
+
+    // Create the NFT data
+    if (!m_wallet->create_nft(req.name, req.description, req.image_url, req.token_id, req.owner, nft_data)) {
+        res.success = false;
+        res.status = "Failed to create NFT.";
+        return true;
+    }
+
+    try {
+        // Create a new transaction
+        std::vector<tools::wallet2::pending_tx> ptx_vector;
+        cryptonote::transaction tx;
+        std::string err;
+
+        // Get the hard fork version
+        boost::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+        if (!hf_version) {
+            res.success = false;
+            res.status = tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+            return true;
+        }
+
+        // Construct transaction parameters
+        guus_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::standard, m_wallet->get_default_priority());
+
+        // Create the transaction
+        std::vector<cryptonote::tx_destination_entry> dsts;
+        tx_extra extra;
+        if (!cryptonote::add_tx_extra(tx, nft_data)) {
+            res.success = false;
+            res.status = "Failed to add NFT data to transaction.";
+            return true;
+        }
+
+        // Create the transactions
+        ptx_vector = m_wallet->create_transactions_2(dsts, CRYPTONOTE_DEFAULT_TX_MIXIN, 0, m_wallet->get_default_priority(), extra, m_current_subaddress_account, {}, tx_params);
+
+        if (ptx_vector.empty()) {
+            res.success = false;
+            res.status = "No outputs found, or daemon is not ready.";
+            return true;
+        }
+
+        // Confirm and send the transactions
+        if (!confirm_and_send_tx({}, ptx_vector, m_wallet->get_default_priority() == tools::tx_priority_blink, 0, 0, false)) {
+            res.success = false;
+            res.status = "Transaction confirmation failed.";
+            return true;
+        }
+
+        res.success = true;
+        res.status = "NFT created and transaction sent successfully.";
+    } catch (const std::exception &e) {
+        handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+        res.success = false;
+        res.status = std::string("Failed to sign and send transaction: ") + e.what();
+    } catch (...) {
+        LOG_ERROR("unknown error");
+        res.success = false;
+        res.status = "unknown error";
+    }
+
+    return true;
+  }
+//-----------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::on_start_mining(const COMMAND_RPC_START_MINING::request& req, COMMAND_RPC_START_MINING::response& res, const connection_context *ctx)
   {
     PERF_TIMER(on_start_mining);

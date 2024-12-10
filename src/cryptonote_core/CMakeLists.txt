@@ -1,4 +1,4 @@
-# Copyright (c) 2018, The Guus Project
+# Copyright (c) 2024-2025, The Guus Project
 # Copyright (c) 2014-2019, The Monero Project
 #
 # All rights reserved.
@@ -37,6 +37,7 @@ add_library(cryptonote_core
   frame_pix_swarm.cpp
   tx_blink.cpp
   guus_name_system.cpp
+  nft.cpp
   tx_pool.cpp
   tx_sanity_check.cpp
   miner.cpp

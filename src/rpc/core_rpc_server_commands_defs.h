@@ -122,6 +122,36 @@ constexpr char const CORE_RPC_STATUS_TX_LONG_POLL_MAX_CONNECTIONS[] = "Daemon ma
     };
 
   GUUS_RPC_DOC_INTROSPECT
+  // NFT.
+    struct COMMAND_RPC_CREATE_NFT {
+        struct request_t {
+            std::string name;
+            std::string description;
+            std::string image_url;
+            uint64_t token_id;
+            std::string owner;
+            BEGIN_KV_SERIALIZE_MAP()
+                KV_SERIALIZE(name)
+                KV_SERIALIZE(description)
+                KV_SERIALIZE(image_url)
+                KV_SERIALIZE(token_id)
+                KV_SERIALIZE(owner)
+            END_KV_SERIALIZE_MAP()
+        };
+        typedef epee::misc_utils::struct_init<request_t> request;
+
+        struct response_t {
+            bool success;
+            std::string status;
+            BEGIN_KV_SERIALIZE_MAP()
+                KV_SERIALIZE(success)
+                KV_SERIALIZE(status)
+            END_KV_SERIALIZE_MAP()
+        };
+        typedef epee::misc_utils::struct_init<response_t> response;
+    };
+
+  GUUS_RPC_DOC_INTROSPECT
   // Get the node's current height.
   struct COMMAND_RPC_GET_HEIGHT
   {

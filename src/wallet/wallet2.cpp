@@ -43,7 +43,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
-#include <openssl/sha.h> 
+#include <openssl/sha.h>
 #include <boost/filesystem.hpp>
 
 #include "include_base_utils.h"
@@ -92,6 +92,7 @@ using namespace epee;
 #include "common/guus_integration_test_hooks.h"
 #include "lns.h"
 #include "string_coding.h"
+#include "cryptonote_core/nft.h"
 
 extern "C"
 {
@@ -1799,7 +1800,11 @@ void wallet2::cache_tx_data(const cryptonote::transaction& tx, const crypto::has
     }
   }
 }
-//----------------------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------------------
+bool wallet2::create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner, cryptonote::tx_extra_nft_data& nft_data) {
+    return create_nft(name, description, image_url, token_id, owner, nft_data.nft);
+}
+//-----------------------------------------------------------------------------------------------------
 void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote::transaction& tx, const std::vector<uint64_t> &o_indices,
     uint64_t height, uint64_t ts, bool miner_tx, bool pool, bool blink, bool double_spend_seen,
     const tx_cache_data &tx_cache_data, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache)

@@ -38,6 +38,22 @@ namespace rpc
         }
     });
 
+    m_server->add_rpc_command("create_nft", [this](const json_rpc_request& req) -> json_rpc_response {
+        COMMAND_RPC_CREATE_NFT::request_t request;
+        request.name = req.params["name"].get<std::string>();
+        request.description = req.params["description"].get<std::string>();
+        request.image_url = req.params["image_url"].get<std::string>();
+        request.token_id = req.params["token_id"].get<uint64_t>();
+        request.owner = req.params["owner"].get<std::string>();
+
+        COMMAND_RPC_CREATE_NFT::response_t response;
+        if (on_create_nft(request, response)) {
+            return json_rpc_response::ok(req.id, response);
+        } else {
+            return json_rpc_response::error(req.id, response.status);
+        }
+    });
+
   }
   boost::optional<output_distribution_data>
     RpcHandler::get_output_distribution(const std::function<bool(uint64_t, uint64_t, uint64_t, uint64_t&, std::vector<uint64_t>&, uint64_t&)> &f, uint64_t amount, uint64_t from_height, uint64_t to_height, const std::function<crypto::hash(uint64_t)> &get_hash, bool cumulative, uint64_t blockchain_height)

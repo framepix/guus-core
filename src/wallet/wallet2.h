@@ -336,6 +336,8 @@ private:
     friend class wallet_keys_unlocker;
     friend class wallet_device_callback;
   public:
+    // Create NFT data
+    bool create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner, cryptonote::tx_extra_nft_data& nft_data);
     // Load file data from a given file path
     bool load_file_data(const std::string& file_path, cryptonote::tx_extra_file_data& file_data);
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
@@ -945,6 +947,7 @@ private:
     bool key_on_device() const { return get_device_type() != hw::device::device_type::SOFTWARE; }
     hw::device::device_type get_device_type() const { return m_key_device_type; }
     bool reconnect_device();
+
 
     // locked & unlocked balance of given or current subaddress account
     uint64_t balance(uint32_t subaddr_index_major) const;
