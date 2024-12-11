@@ -60,6 +60,7 @@
 #include "common/varint.h"
 #include "common/pruning.h"
 #include "common/lock.h"
+#include "nft.h"
 
 #ifdef ENABLE_SYSTEMD
 extern "C" {
@@ -4049,6 +4050,20 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
       return false;
     }
 
+    // Check if this transaction has NFT data
+    nft::nft_data nft;
+    if (extract_nft_from_transaction(tx_tmp, nft)) {
+        // If the transaction contains NFT data, create and store the NFT
+        // (TODO): Modify the create_nft function to store NFT data in the blockchain as needed
+        bool nft_created = nft::create_nft(nft.metadata.name, nft.metadata.description, nft.metadata.image_url,
+                                           nft.token_id, nft.owner, nft, tx_tmp);
+        if (!nft_created) {
+            MERROR_VER("Failed to create NFT in transaction " << tx_id);
+            bvc.m_verifivation_failed = true;
+            return_tx_to_pool(txs);
+            return false;
+        }
+    }
     TIME_MEASURE_FINISH(bb);
     t_pool += bb;
     // add the transaction to the temp list of transactions, so we can either

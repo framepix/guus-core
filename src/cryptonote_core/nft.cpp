@@ -12,22 +12,24 @@
 
 namespace nft {
 
-// Utility to encode data into base58 for transaction extra
 std::string encode_to_base58(const std::string& data) {
     std::string encoded;
     tools::base58::encode(data, encoded);
     return encoded;
 }
 
-bool create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner_address, nft_data& nft) {
-    // Basic validation
+bool decode_from_base58(const std::string& encoded, std::string& data) {
+    return tools::base58::decode(encoded, data);
+}
+
+bool create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner_address, nft_data& nft, cryptonote::transaction& tx) {
     if (name.empty() || description.empty() || image_url.empty() || token_id == 0 || owner_address.empty()) {
         return false;
     }
 
     cryptonote::account_public_address owner;
     if (!cryptonote::get_account_address_from_str(owner, mainnet, owner_address)) {
-        throw std::runtime_error("Invalid Guus address for NFT owner");
+        throw std::runtime_error("Invalid Monero address for NFT owner");
     }
 
     nft.token_id = token_id;
@@ -36,13 +38,13 @@ bool create_nft(const std::string& name, const std::string& description, const s
     nft.metadata.description = description;
     nft.metadata.image_url = image_url;
 
-    // Creating a unique NFT identifier using Guus's crypto functions
+    // Create unique NFT identifier
     crypto::hash nft_hash;
     std::string nft_data_string = name + description + image_url + std::to_string(token_id);
     crypto::cn_fast_hash(nft_data_string.data(), nft_data_string.size(), nft_hash);
     nft.unique_id = epee::string_tools::pod_to_hex(nft_hash);
 
-    // Prepare NFT data for storage (using JSON for simplicity, ok i will look into this.)
+    // Prepare NFT data for storage
     Json::Value nft_json;
     nft_json["token_id"] = static_cast<Json::UInt64>(token_id);
     nft_json["owner"] = owner_address;
@@ -56,27 +58,26 @@ bool create_nft(const std::string& name, const std::string& description, const s
     Json::StreamWriterBuilder builder;
     std::string json_string = Json::writeString(builder, nft_json);
 
-    // (TODO): Storing NFT in blockchain (transaction extra)
-    // This is highly simplified. But might use any if its best for guus:
-    // - Off-chain storage with on-chain pointers
-    // - Encrypted data for privacy
-
     // Encode JSON to Base58 for transaction extra
     std::string encoded_nft_data = encode_to_base58(json_string);
-    nft.transaction_extra = encoded_nft_data; // Store for use in transaction creation
+    nft.transaction_extra = encoded_nft_data;
 
-    // (TODO): NFT authenticity (pseudo-signing via transaction)
-    // This would involve:
-    // - Creating a transaction where the NFT creation is part of the transaction data
-    // - The owner signs this transaction, indirectly "signing" the NFT
+    // Append encoded NFT data to tx_extra in the transaction
+    tx.extra.clear(); // Clear existing extra data if any
+    tx.extra.insert(tx.extra.end(), encoded_nft_data.begin(), encoded_nft_data.end());
 
     return true;
 }
 
-// Deserialize NFT data from transaction extra
-bool deserialize_nft(const std::string& encoded_nft_data, nft_data& nft) {
+bool extract_nft_from_transaction(const cryptonote::transaction& tx, nft_data& nft) {
+    std::string encoded_nft_data(tx.extra.begin(), tx.extra.end());
+    
+    if (encoded_nft_data.empty()) {
+        return false;
+    }
+
     std::string decoded_nft_data;
-    if (!tools::base58::decode(encoded_nft_data, decoded_nft_data)) {
+    if (!decode_from_base58(encoded_nft_data, decoded_nft_data)) {
         return false;
     }
 
@@ -98,7 +99,5 @@ bool deserialize_nft(const std::string& encoded_nft_data, nft_data& nft) {
 
     return true;
 }
-
-// (TODO): Additional functions for transfer, verification, etc.
 
 } // namespace nft
