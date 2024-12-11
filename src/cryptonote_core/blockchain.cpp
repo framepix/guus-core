@@ -4276,6 +4276,40 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   return true;
 }
 //------------------------------------------------------------------
+// Create and add an NFT transaction to the mempool
+bool blockchain::create_and_add_nft_transaction(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner_address) {
+    cryptonote::transaction tx;
+    nft::nft_data nft;
+
+    if (!nft::create_nft(name, description, image_url, token_id, owner_address, nft, tx)) {
+        // Log error or handle the failure
+        return false;
+    }
+
+    // Here we would normally set up inputs, outputs, and other transaction details
+    // This is a placeholder for how you might add an NFT transaction:
+    // Set up transaction inputs, outputs etc. before adding to mempool
+    // cryptonote::construct_miner_tx(...) or similar functions would be used
+
+    // Add transaction to mempool
+    if (!m_mempool.add_tx(tx, false)) {
+        // Handle mempool rejection
+        return false;
+    }
+
+    return true;
+}
+//------------------------------------------------------------------
+// Retrieve an NFT from the blockchain
+bool blockchain::get_nft_by_id(const std::string& unique_id, nft::nft_data& nft_data) {
+    auto it = nft_registry.find(unique_id);
+    if (it != nft_registry.end()) {
+        nft_data = it->second;
+        return true;
+    }
+    return false;
+}
+//------------------------------------------------------------------
 bool Blockchain::prune_blockchain(uint32_t pruning_seed)
 {
   auto lock = tools::unique_locks(m_tx_pool, *this);
