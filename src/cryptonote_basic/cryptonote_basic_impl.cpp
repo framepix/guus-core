@@ -80,26 +80,34 @@ namespace cryptonote {
     return CRYPTONOTE_MAX_TX_SIZE;
   }
   //-----------------------------------------------------------------------------------------------
-  // TODO(guus): Move into guus_economy, this will require access to guus::exp2
-  uint64_t block_reward_unpenalized_formula_v7(uint64_t already_generated_coins, uint64_t height)
-  {
-    uint64_t emission_supply_component = (already_generated_coins * EMISSION_SUPPLY_MULTIPLIER) / EMISSION_SUPPLY_DIVISOR;
-    uint64_t result = (EMISSION_LINEAR_BASE - emission_supply_component) / EMISSION_DIVISOR;
-
-    // Check if we just overflowed
-    if (emission_supply_component > EMISSION_LINEAR_BASE)
-      result = 0;
-    return result;
+  // Append NFT data to transaction extra
+  bool append_nft_to_tx_extra(std::vector<uint8_t>& extra, const nft_data& nft) {
+    if (extra.size() + sizeof(nft_data) > CRYPTONOTE_TX_EXTRA_NONCE_MAX_COUNT) {
+      MERROR("Failed to append NFT data to transaction extra: extra data too large");
+      return false;
+    }
+    std::string nft_blob = t_serializable_object_to_blob(nft);
+    return add_extra_nonce_to_tx_extra(extra, nft_blob);
   }
+  //------------------------------------------------------------------------------------------------
+  // Extract NFT data from transaction extra
+  bool get_nft_from_tx_extra(const std::vector<uint8_t>& extra, nft_data& nft) {
+    std::vector<tx_extra_field> tx_extra_fields;
+    if (!parse_tx_extra(extra, tx_extra_fields)) {
+      MERROR("Failed to parse transaction extra fields");
+      return false;
+    }
 
-  uint64_t block_reward_unpenalized_formula_v8(uint64_t height)
-  {
-    std::fesetround(FE_TONEAREST);
-    uint64_t result = 500'000'000'000. + 100'000'000'000. / guus::exp2(height / (720. * 90)); // halve every 90 days.
-    return result;
+    tx_extra_nonce extra_nonce;
+    if (find_tx_extra_field_by_type(tx_extra_fields, extra_nonce)) {
+      if (!extra_nonce.nonce.empty()) {
+        return ::serialization::parse_binary(extra_nonce.nonce, nft);
+      }
+    }
+    return false;
   }
-
-  bool get_base_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint64_t &reward_unpenalized, uint8_t version, uint64_t height) {
+//-----------------------------------------------------------------------------------
+bool get_base_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, uint64_t &reward, uint64_t &reward_unpenalized, uint8_t version, uint64_t height, const std::vector<uint8_t>& extra) {
 
     //premine reward
     if (already_generated_coins == 0)
@@ -124,35 +132,47 @@ namespace cryptonote {
 
     if (current_block_weight <= median_weight) {
       reward = reward_unpenalized = base_reward;
-      return true;
+    } else {
+      if(current_block_weight > 2 * median_weight) {
+        MERROR("Block cumulative weight is too big: " << current_block_weight << ", expected less than " << 2 * median_weight);
+        return false;
+      }
+
+      assert(median_weight < std::numeric_limits<uint32_t>::max());
+      assert(current_block_weight < std::numeric_limits<uint32_t>::max());
+
+      uint64_t product_hi;
+      // BUGFIX: 32-bit saturation bug (e.g. ARM7), the result was being
+      // treated as 32-bit by default.
+      uint64_t multiplicand = 2 * median_weight - current_block_weight;
+      multiplicand *= current_block_weight;
+      uint64_t product_lo = mul128(base_reward, multiplicand, &product_hi);
+
+      uint64_t reward_hi;
+      uint64_t reward_lo;
+      div128_32(product_hi, product_lo, static_cast<uint32_t>(median_weight), &reward_hi, &reward_lo);
+      div128_32(reward_hi, reward_lo, static_cast<uint32_t>(median_weight), &reward_hi, &reward_lo);
+      assert(0 == reward_hi);
+      assert(reward_lo < base_reward);
+
+      reward_unpenalized = base_reward;
+      reward = reward_lo;
     }
 
-    if(current_block_weight > 2 * median_weight) {
-      MERROR("Block cumulative weight is too big: " << current_block_weight << ", expected less than " << 2 * median_weight);
-      return false;
+    // Check for NFT data in transaction extra
+    nft_data nft;
+    if (get_nft_from_tx_extra(extra, nft)) {
+      // Adjust reward for NFT transactions
+      // Reduce reward by 10% for NFT transactions to potentially discourage spam
+      uint64_t nft_reward_reduction = reward / 10; // 10% reduction
+      reward = reward > nft_reward_reduction ? reward - nft_reward_reduction : 0; // Ensure reward doesn't go below 0
+
+      // Log or apply other incentives or penalties here if needed
+      MINFO("Adjusted block reward due to NFT transaction: Original reward: " << reward_unpenalized << ", Adjusted reward: " << reward);
     }
 
-    assert(median_weight < std::numeric_limits<uint32_t>::max());
-    assert(current_block_weight < std::numeric_limits<uint32_t>::max());
-
-    uint64_t product_hi;
-    // BUGFIX: 32-bit saturation bug (e.g. ARM7), the result was being
-    // treated as 32-bit by default.
-    uint64_t multiplicand = 2 * median_weight - current_block_weight;
-    multiplicand *= current_block_weight;
-    uint64_t product_lo = mul128(base_reward, multiplicand, &product_hi);
-
-    uint64_t reward_hi;
-    uint64_t reward_lo;
-    div128_32(product_hi, product_lo, static_cast<uint32_t>(median_weight), &reward_hi, &reward_lo);
-    div128_32(reward_hi, reward_lo, static_cast<uint32_t>(median_weight), &reward_hi, &reward_lo);
-    assert(0 == reward_hi);
-    assert(reward_lo < base_reward);
-
-    reward_unpenalized = base_reward;
-    reward = reward_lo;
     return true;
-  }
+}
   //------------------------------------------------------------------------------------
   uint8_t get_account_address_checksum(const public_address_outer_blob& bl)
   {
@@ -354,4 +374,127 @@ bool parse_hash256(const std::string &str_hash, crypto::hash& hash)
     buf.copy(reinterpret_cast<char *>(&hash), sizeof(crypto::hash));
     return true;
   }
+}
+
+//------------------------------------------------------------------------------------
+  // Check if a transaction contains NFT data
+  bool is_nft_transaction(const transaction& tx) {
+    nft_data nft;
+    return get_nft_from_tx_extra(tx.extra, nft);
+  }
+//-----------------------------------------------------------------------------------
+  // Validate NFT data within a transaction
+  bool validate_nft_transaction(const transaction& tx) {
+    nft_data nft;
+    if (!get_nft_from_tx_extra(tx.extra, nft)) {
+      MERROR("Failed to extract NFT data from transaction");
+      return false;
+    }
+
+    // Validate NFT data here, e.g., check if token_id is unique or if the owner matches the transaction output
+    if (nft.token_id == 0 || nft.name.empty() || nft.description.empty() || nft.image_url.empty()) {
+      MERROR("Invalid NFT data in transaction");
+      return false;
+    }
+
+    // (TODO): Checking if the owner address matches one of the transaction outputs
+    for (const auto &out : tx.vout) {
+      if (out.target.type() == typeid(txout_to_key)) {
+        const txout_to_key& tk = boost::get<txout_to_key>(out.target);
+        if (tk.key == nft.owner.m_spend_public_key) {
+          return true;
+        }
+      }
+    }
+
+    MERROR("NFT owner address does not match any output in the transaction");
+    return false;
+  }
+//------------------------------------------------------------------------------------
+  // Create an NFT transaction
+  bool create_nft_transaction(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const account_public_address& owner, transaction& tx) {
+    nft_data nft;
+    nft.name = name;
+    nft.description = description;
+    nft.image_url = image_url;
+    nft.token_id = token_id;
+    nft.owner = owner;
+
+    // Construct the transaction, add inputs and outputs, and set up the extra data
+    if (!append_nft_to_tx_extra(tx.extra, nft)) {
+      MERROR("Failed to append NFT data to transaction");
+      return false;
+    }
+
+    // (TODO): Adding inputs, outputs, and setting up fees
+
+    return true;
+  }
+//-------------------------------------------------------------------------------------
+  // Transfer an NFT
+  bool transfer_nft_transaction(const crypto::hash& nft_token_id, const account_public_address& current_owner, const account_public_address& new_owner, transaction& tx) {
+    nft_data nft;
+    // Retrieve NFT data from blockchain or current state.
+    // Fetch NFT by token_id from the blockchain
+    if (!get_nft_by_token_id(nft_token_id, nft)) {
+      MERROR("Could not find NFT with token_id: " << epee::string_tools::pod_to_hex(nft_token_id));
+      return false;
+    }
+
+    // Check if current owner matches
+    if (nft.owner != current_owner) {
+      MERROR("Current owner does not match the NFT owner");
+      return false;
+    }
+
+    // Update the NFT owner
+    nft.owner = new_owner;
+
+    // Reconstruct transaction with updated NFT data
+    if (!append_nft_to_tx_extra(tx.extra, nft)) {
+      MERROR("Failed to append NFT data to transaction for transfer");
+      return false;
+    }
+    // TODO:
+    // Setup transaction details for transfer (inputs, outputs, etc.)
+    // Construct the transaction with the correct inputs and outputs
+
+    return true;
+  }
+//---------------------------------------------------------------------------------
+// Get NFT by token_id
+bool get_nft_by_token_id(const crypto::hash& token_id, nft_data& nft) {
+  blockchain_db* db = block_chain.get_db_context();
+  if (!db) {
+    MERROR("Failed to get database context");
+    return false;
+  }
+
+  std::vector<crypto::hash> tx_hashes;
+  if (!db->get_tx_hashes_by_nft_token_id(token_id, tx_hashes)) {
+    MERROR("Could not find transaction hashes for NFT token_id: " << epee::string_tools::pod_to_hex(token_id));
+    return false;
+  }
+
+  // Since an NFT might be transferred multiple times, we would fetch the most recent one
+  if (tx_hashes.empty()) {
+    MERROR("No transactions found for NFT token_id: " << epee::string_tools::pod_to_hex(token_id));
+    return false;
+  }
+
+  // Get the latest transaction hash
+  crypto::hash latest_tx_hash = tx_hashes.back();
+  transaction tx;
+  if (!db->get_tx(latest_tx_hash, tx)) {
+    MERROR("Failed to retrieve transaction for NFT token_id: " << epee::string_tools::pod_to_hex(token_id));
+    return false;
+  }
+
+  // Extract NFT data from the transaction's extra
+  if (!get_nft_from_tx_extra(tx.extra, nft)) {
+    MERROR("Failed to extract NFT data from transaction extra for token_id: " << epee::string_tools::pod_to_hex(token_id));
+    return false;
+  }
+
+  return true;
 }

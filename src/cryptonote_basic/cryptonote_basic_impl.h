@@ -33,9 +33,27 @@
 #include "cryptonote_basic.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
-
+#include "nft.h"
 
 namespace cryptonote {
+
+// NFT
+struct nft_data {
+  std::string name;
+  std::string description;
+  std::string image_url;
+  uint64_t token_id;
+  account_public_address owner;
+
+  BEGIN_SERIALIZE_OBJECT()
+    FIELD(name)
+    FIELD(description)
+    FIELD(image_url)
+    FIELD(token_id)
+    FIELD(owner)
+  END_SERIALIZE()
+};
+
   class BlockAddedHook
   {
   public:
@@ -152,6 +170,16 @@ namespace cryptonote {
 
   bool operator ==(const cryptonote::transaction& a, const cryptonote::transaction& b);
   bool operator ==(const cryptonote::block& a, const cryptonote::block& b);
+
+  // NFT related functions
+  bool append_nft_to_tx_extra(std::vector<uint8_t>& extra, const nft_data& nft);
+  bool get_nft_from_tx_extra(const std::vector<uint8_t>& extra, nft_data& nft);
+  bool is_nft_transaction(const transaction& tx);
+  bool validate_nft_transaction(const transaction& tx);
+  bool create_nft_transaction(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const account_public_address& owner, transaction& tx);
+  bool transfer_nft_transaction(const crypto::hash& nft_token_id, const account_public_address& current_owner, const account_public_address& new_owner, transaction& tx);
+  bool get_nft_by_token_id(const crypto::hash& token_id, nft_data& nft);
+
 }
 
 bool parse_hash256(const std::string &str_hash, crypto::hash& hash);

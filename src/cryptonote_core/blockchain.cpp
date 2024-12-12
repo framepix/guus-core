@@ -85,6 +85,8 @@ using namespace crypto;
 
 using namespace cryptonote;
 using epee::string_tools::pod_to_hex;
+// Use a mutex for thread safety if these might be called concurrently
+static std::mutex nft_index_mutex;
 
 DISABLE_VS_WARNINGS(4267)
 
@@ -1092,6 +1094,105 @@ bool Blockchain::rollback_blockchain_switching(const std::list<block_and_checkpo
   return true;
 }
 //------------------------------------------------------------------
+void blockchain::index_nfts()
+{
+  std::lock_guard<std::mutex> lock(nft_index_mutex);
+  nft_index.clear(); // Clear existing index before re-indexing
+
+  uint64_t height = get_current_blockchain_height();
+  for (uint64_t h = 1; h <= height; ++h) // Start from block 1, assuming genesis block has no NFTs
+  {
+    block b;
+    std::vector<transaction> txs;
+    if (!get_block_by_height(h, b, txs))
+    {
+      MERROR("Failed to get block at height " << h << " during NFT indexing");
+      continue; // Skip this block if there's an error
+    }
+
+    for (const auto &tx : txs)
+    {
+      tx_extra_nft nft_data;
+      if (check_tx_extra(tx.extra, nft_data))
+      {
+        crypto::hash nft_hash = crypto::cn_fast_hash(&nft_data.token_id, sizeof(nft_data.token_id));
+        nft_index[nft_data.token_id] = nft_hash;
+      }
+    }
+  }
+}
+//------------------------------------------------------
+bool blockchain::nft_exists(uint64_t token_id) const
+{
+  std::lock_guard<std::mutex> lock(nft_index_mutex);
+  return nft_index.find(token_id) != nft_index.end();
+}
+//-------------------------------------------------------------------------
+bool blockchain::get_nft_by_id(const crypto::hash& token_id, nft_data& nft) const
+{
+  // First, check if we have the token ID in our index
+  std::lock_guard<std::mutex> lock(nft_index_mutex);
+  auto it = std::find_if(nft_index.begin(), nft_index.end(), 
+                         [&token_id](const auto& pair) { return pair.second == token_id; });
+  
+  if (it == nft_index.end())
+  {
+    MDEBUG("NFT with hash " << token_id << " not found in index");
+    return false;
+  }
+
+  // If found in index, now search the blockchain for the full NFT data
+  uint64_t id = it->first;
+  uint64_t height = get_current_blockchain_height();
+  for (uint64_t h = height; h > 0; --h)
+  {
+    block b;
+    std::vector<transaction> txs;
+    if (!get_block_by_height(h, b, txs))
+    {
+      MERROR("Failed to get block at height " << h);
+      continue;
+    }
+
+    for (const auto &tx : txs)
+    {
+      tx_extra_nft nft_data;
+      if (check_tx_extra(tx.extra, nft_data) && nft_data.token_id == id)
+      {
+        nft = nft_data;
+        return true;
+      }
+    }
+  }
+  
+  MWARNING("NFT with token_id " << id << " found in index but not in blockchain");
+  return false;
+}
+//-------------------------------------------------------------------------------------
+void blockchain::get_all_nft_hashes(std::vector<crypto::hash>& nft_hashes) const
+{
+  std::lock_guard<std::mutex> lock(nft_index_mutex);
+
+  // Reserve space to avoid unnecessary reallocations
+  nft_hashes.reserve(nft_index.size());
+
+  // Use boost::transform to populate nft_hashes with all the hash values from the index
+  boost::push_back(nft_hashes, nft_index | boost::adaptors::transformed([](const auto& pair) { return pair.second; }));
+}
+//-------------------------------------------------------------------------------------------------
+bool blockchain::is_valid_address(const cryptonote::account_public_address& addr) const
+{
+  // Check if the address matches the current network type
+  if (!cryptonote::get_account_address_checksum_valid(addr, get_nettype()))
+  {
+    MERROR("Address does not match network type");
+    return false;
+  }
+
+  // Here, we're just checking if the address checksum is valid for the network type
+  return true;
+}
+//------------------------------------------------------------------------------------
 bool Blockchain::blink_rollback(uint64_t rollback_height)
 {
   auto lock = tools::unique_locks(m_tx_pool, *this);

@@ -98,6 +98,13 @@ namespace cryptonote
     std::vector<frame_pixs::payout_entry> frame_pix_payouts = frame_pixs::null_winner;
   };
 
+  struct nft_reward_info {
+      uint64_t creation_fee;  // Fee for creating an NFT, this will be used to fund network operations or burn
+      uint64_t transfer_fee;  // Fee for transferring an NFT
+      uint64_t burn_fee;      // Fee for burning an NFT
+      uint64_t royalty_fee;   // Royalty fee paid to the creator on secondary sales
+  };
+
   // NOTE(guus): I would combine this into get_base_block_reward, but
   // cryptonote_basic as a library is to be able to trivially link with
   // cryptonote_core since it would have a circular dependency on Blockchain

@@ -362,6 +362,17 @@ namespace cryptonote
     //  << "), current_block_size=" << current_block_size << ", already_generated_coins=" << already_generated_coins << ", tx_id=" << get_transaction_hash(tx), LOG_LEVEL_2);
     return true;
   }
+//-------------------------------------------------------------------------------------------------------------
+  cryptonote::nft_reward_info get_nft_reward_info(uint8_t hf_version) {
+    nft_reward_info info = {};
+    // Set fees based on hard fork version 16
+    info.creation_fee = hf_version >= network_version_16_nft ? NFT_CREATION_FEE_HF16 : 0;
+    info.transfer_fee = hf_version >= network_version_16_nft ? NFT_TRANSFER_FEE_HF16 : 0;
+    info.burn_fee = hf_version >= network_version_16_nft ? NFT_BURN_FEE_HF16 : 0;
+    info.royalty_fee = hf_version >= network_version_16_nft ? NFT_ROYALTY_FEE_HF16 : 0;
+    return info;
+   }
+//----------------------------------------------------------------------------------------------------------------
 
   bool get_guus_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, int hard_fork_version, block_reward_parts &result, const guus_block_reward_context &guus_context)
   {
@@ -972,20 +983,125 @@ namespace cryptonote
     return r;
   }
   //---------------------------------------------------------------
-  bool construct_tx(const account_keys& sender_account_keys, std::vector<tx_source_entry> &sources, const std::vector<tx_destination_entry>& destinations, const boost::optional<cryptonote::tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const guus_construct_tx_params &tx_params)
-  {
-     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
-     subaddresses[sender_account_keys.m_account_address.m_spend_public_key] = {0,0};
-     crypto::secret_key tx_key;
-     std::vector<crypto::secret_key> additional_tx_keys;
-     std::vector<tx_destination_entry> destinations_copy = destinations;
+  // Check if a transaction contains valid NFT data
+  bool check_nft_data(const Blockchain &blockchain, const cryptonote::transaction& tx, const tx_verification_context &tvc) {
+    tx_extra_nft nft_data;
+    if (!check_tx_extra(tx.extra, nft_data)) {
+        MDEBUG("No NFT data found in the transaction.");
+        return true; // No NFT data, no issues
+    }
 
-     rct::RCTConfig rct_config    = {};
-     rct_config.range_proof_type  = (tx_params.hf_version < network_version_10) ?  rct::RangeProofBorromean : rct::RangeProofPaddedBulletproof;
-     rct_config.bp_version        = (tx_params.hf_version < HF_VERSION_SMALLER_BP) ? 1 : 0;
+    if (!validate_nft_data(blockchain, nft_data, tvc)) {
+        tvc.m_verifivation_failed = true; // Mark the transaction verification as failed
+        tvc.m_invalid_output = true;
+        return false;
+    }
 
-     return construct_tx_and_get_tx_key(sender_account_keys, subaddresses, sources, destinations_copy, change_addr, extra, tx, unlock_time, tx_key, additional_tx_keys, rct_config, NULL, tx_params);
+    return true;
+   }
+  //-----------------------------------------------------------------------------
+  // Validation function for NFT data
+  bool validate_nft_data(const Blockchain &blockchain, const tx_extra_nft& nft_data, tx_verification_context &tvc) {
+    // Basic validation:
+    if (nft_data.token_id == 0) {
+        MERROR("Invalid NFT data: token_id cannot be zero");
+        return false;
+    }
+    if (nft_data.owner.empty()) {
+        MERROR("Invalid NFT data: owner not set");
+        return false;
+    }
+
+    // Check for uniqueness in the blockchain
+    if (blockchain.nft_exists(nft_data.token_id)) {
+        MERROR("NFT with token_id " << nft_data.token_id << " already exists.");
+        tvc.m_double_spend = true; // NFT token_id uniqueness is akin to double-spending
+        return false;
+    }
+
+    // Validate owner address
+    cryptonote::account_public_address addr;
+    if (!cryptonote::get_account_address_from_str(addr, blockchain.get_nettype(), nft_data.owner)) {
+        MERROR("Invalid owner address format for NFT: " << nft_data.owner);
+        return false;
+    }
+
+    // Check if the owner address is valid in the context of this blockchain
+    if (!blockchain.is_valid_address(addr)) {
+        MERROR("Owner address for NFT is not valid in this network: " << nft_data.owner);
+        return false;
+    }
+
+    // Validate:
+    // - NFT name, description, and image_url should be checked against any content policy or size limits
+    if (nft_data.name.size() > NFT_MAX_NAME_LENGTH ||
+        nft_data.description.size() > NFT_MAX_DESC_LENGTH ||
+        nft_data.image_url.size() > NFT_MAX_URL_LENGTH) {
+        MERROR("NFT data exceeds size limits: name(" << nft_data.name.size() << "), description(" << nft_data.description.size() << "), image_url(" << nft_data.image_url.size() << ")");
+        return false;
+    }
+
+    // (TODO):
+    // Checking if the image_url points to a valid, supported file type or domain
+    // Ensuring the description or name does not contain prohibited content
+    // Checking if the NFT conforms to any specific metadata standards
+
+    return true;
   }
+  //---------------------------------------------------------------
+  bool construct_tx(const account_keys& sender_account_keys, std::vector<tx_source_entry> &sources, const std::vector<tx_destination_entry>& destinations, const boost::optional<cryptonote::tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const guus_construct_tx_params &tx_params, const boost::optional<tx_extra_nft>& nft_data)
+  {
+    std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
+    subaddresses[sender_account_keys.m_account_address.m_spend_public_key] = {0,0};
+    crypto::secret_key tx_key;
+    std::vector<crypto::secret_key> additional_tx_keys;
+    std::vector<tx_destination_entry> destinations_copy = destinations;
+
+    rct::RCTConfig rct_config    = {};
+    rct_config.range_proof_type  = (tx_params.hf_version < network_version_10) ?  rct::RangeProofBorromean : rct::RangeProofPaddedBulletproof;
+    rct_config.bp_version        = (tx_params.hf_version < HF_VERSION_SMALLER_BP) ? 1 : 0;
+
+    if (nft_data) {
+        if (!add_nft_to_tx_extra(tx, *nft_data)) {
+            MERROR("Failed to add NFT data to transaction extra.");
+            return false;
+        }
+        if (!check_nft_data(tx)) {
+            MERROR("NFT data in transaction is invalid.");
+            return false;
+        }
+
+        // Adjust fees or outputs according to NFT reward structure
+        nft_reward_info nft_rewards = get_nft_reward_info(tx_params.hf_version);
+        if (nft_rewards.creation_fee > 0) {
+            // Here we add the creation fee to the transaction's fee calculation
+            uint64_t total_fee = nft_rewards.creation_fee;
+            uint64_t amount_in = 0, amount_out = 0;
+            for (const auto &src : sources) {
+                amount_in += src.amount;
+            }
+            for (const auto &dest : destinations) {
+                amount_out += dest.amount;
+            }
+
+            // We'll assume that the fee is added to the miner's reward or burned.
+            uint64_t miner_fee = amount_in - amount_out;
+            if (miner_fee < total_fee) {
+                MERROR("Insufficient funds to cover NFT creation fee.");
+                return false;
+            }
+            miner_fee -= total_fee; // Reduce miner's fee by the NFT creation fee
+            tx.rct_signatures.txnFee = miner_fee; // Update the transaction fee
+
+            // (TODO:)
+             txout_to_key burn_out;
+             burn_out.key = crypto::null_pkey; // or some specific burn address
+             tx.vout.push_back(tx_out{total_fee, burn_out});
+        }
+    }
+
+    return construct_tx_and_get_tx_key(sender_account_keys, subaddresses, sources, destinations_copy, change_addr, extra, tx, unlock_time, tx_key, additional_tx_keys, rct_config, NULL, tx_params);
+    }
   //---------------------------------------------------------------
   bool generate_genesis_block(
       block& bl

@@ -60,7 +60,8 @@
 #define TX_EXTRA_TAG_BURN                       0x79
 // New tag for file data
 #define TX_EXTRA_TAG_FILE_DATA                  0x80
-
+// New tag for NFT
+#define TX_EXTRA_TAG_NFT                        0x81
 #define TX_EXTRA_TAG_GUUS_NAME_SYSTEM           0x7A
 
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG       0xDE
@@ -160,6 +161,24 @@ namespace frame_pixs {
 
 namespace cryptonote
 {
+
+    struct tx_extra_nft
+    {
+        uint64_t token_id;
+        std::string owner;
+        std::string name;
+        std::string description;
+        std::string image_url;
+
+        BEGIN_SERIALIZE()
+            FIELD(token_id)
+            FIELD(owner)
+            FIELD(name)
+            FIELD(description)
+            FIELD(image_url)
+        END_SERIALIZE()
+    };
+
   struct tx_extra_padding
   {
     size_t size;
@@ -584,7 +603,8 @@ namespace cryptonote
                          tx_extra_tx_key_image_unlock,
                          tx_extra_burn,
                          tx_extra_guus_name_system,
-                         tx_extra_file_data
+                         tx_extra_file_data,
+                         tx_extra_nft
                         > tx_extra_field;
 }
 
@@ -609,3 +629,4 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_unlock,         TX
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_burn,                        TX_EXTRA_TAG_BURN);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_guus_name_system,            TX_EXTRA_TAG_GUUS_NAME_SYSTEM);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_file_data,                   TX_EXTRA_TAG_FILE_DATA);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_nft,                         TX_EXTRA_TAG_NFT);

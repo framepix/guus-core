@@ -103,6 +103,16 @@ constexpr uint64_t MINER_REWARD_HF15      = BLOCK_REWARD_HF15 * 24 / 100;
 constexpr uint64_t SN_REWARD_HF15         = BLOCK_REWARD_HF15 * 66 / 100;
 constexpr uint64_t FOUNDATION_REWARD_HF15 = BLOCK_REWARD_HF15 * 10 / 100;
 
+// NFT Reward Structure
+constexpr uint64_t NFT_CREATION_FEE_HF16        = 10000 * COIN;
+constexpr uint64_t NFT_TRANSFER_FEE_HF16        = 500 * COIN;
+constexpr uint64_t NFT_BURN_FEE_HF16            = 10 * COIN;
+constexpr uint64_t NFT_ROYALTY_FEE_HF16         = 200 * COIN;
+
+#define NFT_MAX_NAME_LENGTH   			       256
+#define NFT_MAX_DESC_LENGTH   			       1024
+#define NFT_MAX_URL_LENGTH			       512
+
 constexpr uint64_t BLINK_MINER_TX_FEE_PERCENT = 100;
 constexpr uint64_t BLINK_BURN_FIXED           = 0;
 constexpr uint64_t BLINK_BURN_TX_FEE_PERCENT  = 150;

@@ -1690,6 +1690,31 @@ static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &
   }
 }
 //----------------------------------------------------------------------------------------------------
+wallet2::output_data wallet2::get_output_by_amount(uint64_t amount) const
+{
+  wallet2::output_data result = {};
+  result.amount = 0; // Initialize with 0 to indicate not found
+
+  for (const auto &td : m_transfers)
+  {
+    if (!td.m_spent && !td.m_frozen && td.amount() == amount)
+    {
+      result.amount = td.amount();
+      result.output_index = td.m_global_output_index;
+      result.tx_key = td.m_tx_key;
+      result.output_in_tx_index = td.m_internal_output_index;
+      result.global_output_index = td.m_global_output_index;
+      result.output_key = td.get_public_key();
+
+      // If we found an output, we can return it
+      return result;
+    }
+  }
+
+  // If no matching output was found, return the empty result
+   return result;
+  }
+  //-----------------------------------------------------------------------------------------------------
 void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t vout_index, tx_scan_info_t &tx_scan_info, std::vector<tx_money_got_in_out> &tx_money_got_in_outs, std::vector<size_t> &outs, bool pool, bool blink)
 {
   THROW_WALLET_EXCEPTION_IF(vout_index >= tx.vout.size(), error::wallet_internal_error, "Invalid vout index");

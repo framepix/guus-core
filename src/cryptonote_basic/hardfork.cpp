@@ -120,21 +120,26 @@ static constexpr HardFork::Params mainnet_hard_forks[] =
    0,
  1732103592
   },
+ {
+ cryptonote::network_version_16_nft,
+ 300000,
+   0,
+ 1739280188
+  },
 };
 
 static constexpr HardFork::Params testnet_hard_forks[] =
 {
-  { network_version_7,                      1,      0, 1533631121 },
+  { network_version_7,                    1,      0, 1533631121 },
   { network_version_8,                      2,      0, 1533631122 },
   { network_version_9,        3,      0, 1533631123 },
   { network_version_10,        4,      0, 1542681077 },
   { network_version_11,    5,      0, 1551223964 },
-  { network_version_12,       75471,  0, 1561608000 }, // 2019-06-28 14:00AEDT
-  { network_version_13, 127028, 0, 1568440800 }, // 2019-09-13 16:00AEDT
-  { network_version_14,               174630, 0, 1575075600 }, // 2019-11-30 07:00UTC
-  { network_version_15,                 244777, 0, 1583940000 }, // 2020-03-11 15:20UTC
-};
-
+  { network_version_12,       75471,  0, 1561608000 },
+  { network_version_13, 127028, 0, 1568440800 },
+  { network_version_14,               174630, 0, 1575075600 },
+  { network_version_15,                 244777, 0, 1583940000 },
+ }
 static constexpr HardFork::Params stagenet_hard_forks[] =
 {
   { network_version_7,                   1,      0, 1341378000 },

@@ -58,6 +58,7 @@
 #include "cryptonote_basic/hardfork.h"
 #include "blockchain_db/blockchain_db.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "nft.h"
 
 struct sqlite3;
 namespace frame_pixs { class frame_pix_list; };
@@ -235,6 +236,15 @@ namespace cryptonote
      * @return true if the block was found, else false
      */
     bool get_block_by_hash(const crypto::hash &h, block &blk, bool *orphan = NULL) const;
+
+    // NFT
+    bool nft_exists(uint64_t token_id) const;
+    bool get_nft_by_id(const crypto::hash& token_id, nft_data& nft) const;
+    void get_all_nft_hashes(std::vector<crypto::hash>& nft_hashes) const;
+    void index_nfts(); // Method to build or refresh the NFT index
+
+    // Address validation
+    bool is_valid_address(const cryptonote::account_public_address& addr) const;
 
     /**
      * @brief performs some preprocessing on a group of incoming blocks to speed up verification
@@ -1060,6 +1070,13 @@ namespace cryptonote
 #ifndef IN_UNIT_TESTS
   private:
 #endif
+
+    // NFT index, for quick lookup
+    mutable std::unordered_map<uint64_t, crypto::hash> m_nft_index;
+
+    // Handling blockchain updates related to NFTs
+    bool update_nft_index(const transaction& tx);
+    void clear_nft_index();
 
     bool load_missing_blocks_into_guus_subsystems();
 

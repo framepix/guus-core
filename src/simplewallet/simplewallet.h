@@ -49,6 +49,7 @@
 #include "common/i18n.h"
 #include "common/password.h"
 #include "crypto/crypto.h"  // for definition of crypto::secret_key
+#include "nft.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "wallet.simplewallet"
@@ -438,7 +439,10 @@ namespace cryptonote
     std::atomic<uint64_t> m_password_asked_on_height;
     crypto::hash          m_password_asked_on_checksum;
     boost::thread         m_long_poll_thread;
-    
+    // NFT
+    bool create_nft(const std::vector<std::string> &args);
+    bool transfer_nft(const std::vector<std::string> &args);
+    bool validate_nft(const std::vector<std::string> &args);
     // MMS
     mms::message_store& get_message_store() const { return m_wallet->get_message_store(); };
     mms::multisig_wallet_state get_multisig_wallet_state() const { return m_wallet->get_multisig_wallet_state(); };

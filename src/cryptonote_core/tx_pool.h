@@ -127,6 +127,9 @@ namespace cryptonote
     tx_memory_pool(const tx_memory_pool &) = delete;
     tx_memory_pool &operator=(const tx_memory_pool &) = delete;
 
+    // Check the validity of an NFT within a transaction
+    bool check_nft_validity(const tx_extra_nft &nft_data, const transaction &tx, uint8_t hf_version) const;
+
     /**
      * @copydoc add_tx(transaction&, tx_verification_context&, const tx_pool_options &, uint8_t)
      *

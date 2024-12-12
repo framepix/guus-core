@@ -315,6 +315,17 @@ namespace cryptonote
       return false;
     }
 
+   tx_extra_nft nft_data;
+   if (check_tx_extra(tx.extra, nft_data))
+    {
+    if (!check_nft_validity(nft_data, tx, hf_version))
+    {
+        tvc.m_verifivation_failed = true;
+        tvc.m_invalid_output = true; // Using this flag for NFT validation failure
+        return false;
+    }
+     // (TODO): If NFT data is valid, proceed with adding transaction
+    }
     size_t tx_weight_limit = get_transaction_weight_limit(hf_version);
     if ((!opts.kept_by_block || hf_version >= HF_VERSION_PER_BYTE_FEE) && tx_weight > tx_weight_limit)
     {
@@ -505,6 +516,47 @@ namespace cryptonote
     return add_tx(tx, h, bl, get_transaction_weight(tx, bl.size()), tvc, opts, version);
   }
   //---------------------------------------------------------------------------------
+  bool tx_memory_pool::check_nft_validity(const tx_extra_nft &nft_data, const transaction &tx, uint8_t hf_version) const
+  {
+    // Check if the NFT token_id already exists in the pool
+    auto pool_lock = tools::shared_lock(m_transactions_lock);
+    for (const auto& pool_tx : m_txs_by_fee_and_receive_time)
+    {
+        crypto::hash txid = pool_tx.second;
+        cryptonote::blobdata tx_blob;
+        if (m_blockchain.get_txpool_tx_blob(txid, tx_blob))
+        {
+            tx_extra_nft pool_nft;
+            if (check_tx_extra(tx_blob, pool_nft) && pool_nft.token_id == nft_data.token_id)
+            {
+                MERROR("NFT with token_id " << nft_data.token_id << " already exists in the pool");
+                return false;
+            }
+        }
+    }
+
+    // Check if the NFT token_id exists on the blockchain.
+    // This would require blockchain access, "possibly through Blockchain object, Let me note this for now"
+    if (m_blockchain.nft_exists_on_chain(nft_data.token_id))
+    {
+        MERROR("NFT with token_id " << nft_data.token_id << " already exists on the blockchain");
+        return false;
+    }
+
+    // Validate the owner
+    if (nft_data.owner.empty() || !m_blockchain.is_valid_address(nft_data.owner))
+    {
+        MERROR("Invalid NFT owner: " << nft_data.owner);
+        return false;
+    }
+
+    // (TODO): Additional checks:
+    // - Validating other fields like name, description, image_url for length or format constraints
+    // - Checking if the NFT conforms to any size limits or content policies
+
+    return true;
+   }
+  //--------------------------------------------------------------------------------------------
   bool tx_memory_pool::add_new_blink(const std::shared_ptr<blink_tx> &blink_ptr, tx_verification_context &tvc, bool &blink_exists)
   {
     assert((bool) blink_ptr);
@@ -765,6 +817,14 @@ namespace cryptonote
       }
     }
 
+   // If the transaction includes NFT data, you might want to clear any related structures or flags
+   tx_extra_nft nft_data;
+   if (check_tx_extra(tx_blob, nft_data))
+   {
+    // Remove NFT from any internal tracking
+    auto lock = tools::unique_lock(m_nft_tracker_mutex); // Assuming there's a mutex for thread safety
+    m_nft_tracker.erase(nft_data.token_id); // Assuming m_nft_tracker is a map or set to track NFTs
+    }
     // remove first, in case this throws, so key images aren't removed
     const uint64_t tx_fee = std::get<1>(it->first);
     MINFO("Removing tx " << txid << " from txpool: weight: " << meta->weight << ", fee/byte: " << tx_fee);

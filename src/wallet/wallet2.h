@@ -1596,9 +1596,18 @@ private:
     void finish_rescan_bc_keep_key_images(uint64_t transfer_height, const crypto::hash &hash);
     void set_offline(bool offline = true);
 
-
+    output_data get_output_by_amount(uint64_t amount) const;
     std::atomic<bool> m_long_poll_disabled;
   private:
+  struct output_data
+  {
+    uint64_t amount;
+    size_t output_index;
+    crypto::public_key tx_key;
+    size_t output_in_tx_index;
+    uint64_t global_output_index;
+    crypto::public_key output_key;
+  };
     /*!
      * \brief  Stores wallet information to wallet file.
      * \param  keys_file_name Name of wallet file

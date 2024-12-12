@@ -81,6 +81,7 @@
 #include "wallet/message_store.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include "string_coding.h"
+#include "nft.h"
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -171,6 +172,10 @@ namespace
 
   const command_line::arg_descriptor< std::vector<std::string> > arg_command = {"command", ""};
 
+  // NFT command definitions
+  const char* USAGE_CREATE_NFT("create_nft <name> <description> <image_url> <token_id> <owner_address>");
+  const char* USAGE_TRANSFER_NFT("transfer_nft <nft_token_id> <current_owner_address> <new_owner_address>"); 
+  const char* USAGE_VALIDATE_NFT("validate_nft <transaction_hash>");
   const char* USAGE_START_MINING("start_mining [<number_of_threads>] [bg_mining] [ignore_battery]");
   const char* USAGE_SET_DAEMON("set_daemon <host>[:<port>] [trusted|untrusted]");
   const char* USAGE_SHOW_BALANCE("balance [detail]");
@@ -2613,6 +2618,19 @@ simple_wallet::simple_wallet()
                            boost::bind(&simple_wallet::add_file_to_tx_command, this, _1),
                            tr(USAGE_ADD_FILE_TO_TX),
                            tr("Add a file to the transaction."));
+  // NFT operations
+  m_cmd_binder.set_handler("create_nft",
+                           boost::bind(&simple_wallet::create_nft, this, _1),
+                           tr(USAGE_CREATE_NFT),
+                           tr("Create a new NFT with the given parameters."));
+  m_cmd_binder.set_handler("transfer_nft",
+                           boost::bind(&simple_wallet::transfer_nft, this, _1),
+                           tr(USAGE_TRANSFER_NFT),
+                           tr("Transfer an existing NFT from one address to another."));
+  m_cmd_binder.set_handler("validate_nft",
+                           boost::bind(&simple_wallet::validate_nft, this, _1),
+                           tr(USAGE_VALIDATE_NFT),
+                           tr("Validate an NFT transaction by its hash to ensure it includes valid NFT data."));
   m_cmd_binder.set_handler("start_mining",
                            boost::bind(&simple_wallet::start_mining, this, _1),
                            tr(USAGE_START_MINING),
@@ -4847,6 +4865,123 @@ bool simple_wallet::save_bc(const std::vector<std::string>& args)
   else
     fail_msg_writer() << tr("blockchain can't be saved: ") << err;
   return true;
+}
+//---------------------------------------------------------------------------------------------------
+bool simple_wallet::create_nft(const std::vector<std::string> &args)
+{
+  if (args.size() < 5) {
+    fail_msg_writer() << tr("Usage: create_nft <name> <description> <image_url> <token_id> <owner_address>");
+    return true;
+  }
+
+  const std::string name = args[0];
+  const std::string description = args[1];
+  const std::string image_url = args[2];
+  uint64_t token_id;
+  if (!epee::string_tools::get_xtype_from_string(token_id, args[3])) {
+    fail_msg_writer() << tr("Invalid token ID");
+    return true;
+  }
+  cryptonote::address_parse_info owner;
+  if (!cryptonote::get_account_address_from_str_or_url(owner, m_wallet->nettype(), args[4], oa_prompter)) {
+    fail_msg_writer() << tr("Invalid owner address");
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK_ON_BAD_PASSWORD(return true;);
+
+  try {
+    transaction tx;
+    if (m_wallet->create_nft(name, description, image_url, token_id, get_account_address_as_str(m_wallet->nettype(), owner.is_subaddress, owner.address), tx)) {
+      // Assuming commit_tx also handles broadcasting the transaction
+      m_wallet->commit_tx(tx);
+      success_msg_writer() << tr("NFT created successfully");
+      return true;
+    } else {
+      fail_msg_writer() << tr("Failed to create NFT");
+      return true;
+    }
+  } catch (const std::exception &e) {
+    fail_msg_writer() << tr("Error creating NFT: ") << e.what();
+    return true;
+  }
+}
+//---------------------------------------------------------------------------------
+bool simple_wallet::transfer_nft(const std::vector<std::string> &args)
+{
+  if (args.size() < 3) {
+    fail_msg_writer() << tr("Usage: transfer_nft <nft_token_id> <current_owner_address> <new_owner_address>");
+    return true;
+  }
+
+  crypto::hash nft_token_id;
+  if (!epee::string_tools::hex_to_pod(args[0], nft_token_id)) {
+    fail_msg_writer() << tr("Invalid NFT token ID");
+    return true;
+  }
+
+  cryptonote::address_parse_info current_owner, new_owner;
+  if (!cryptonote::get_account_address_from_str_or_url(current_owner, m_wallet->nettype(), args[1], oa_prompter)) {
+    fail_msg_writer() << tr("Invalid current owner address");
+    return true;
+  }
+  if (!cryptonote::get_account_address_from_str_or_url(new_owner, m_wallet->nettype(), args[2], oa_prompter)) {
+    fail_msg_writer() << tr("Invalid new owner address");
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK_ON_BAD_PASSWORD(return true;);
+
+  try {
+    transaction tx;
+    if (m_wallet->transfer_nft(nft_token_id, get_account_address_as_str(m_wallet->nettype(), current_owner.is_subaddress, current_owner.address), get_account_address_as_str(m_wallet->nettype(), new_owner.is_subaddress, new_owner.address), tx)) {
+      m_wallet->commit_tx(tx);
+      success_msg_writer() << tr("NFT transferred successfully");
+      return true;
+    } else {
+      fail_msg_writer() << tr("Failed to transfer NFT");
+      return true;
+    }
+  } catch (const std::exception &e) {
+    fail_msg_writer() << tr("Error transferring NFT: ") << e.what();
+    return true;
+  }
+}
+//-----------------------------------------------------------------------------------
+bool simple_wallet::validate_nft(const std::vector<std::string> &args)
+{
+  if (args.size() != 1) {
+    fail_msg_writer() << tr("Usage: validate_nft <transaction_hash>");
+    return true;
+  }
+
+  crypto::hash tx_hash;
+  if (!epee::string_tools::hex_to_pod(args[0], tx_hash)) {
+    fail_msg_writer() << tr("Invalid transaction hash");
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK_ON_BAD_PASSWORD(return true;);
+
+  try {
+    transaction tx;
+    if (!m_wallet->get_transaction_by_hash(tx_hash, tx)) {
+      fail_msg_writer() << tr("Transaction not found in wallet");
+      return true;
+    }
+
+    tx_verification_context tvc = AUTO_VAL_INIT(tvc);
+    if (m_wallet->validate_nft(tx, tvc)) {
+      success_msg_writer() << tr("NFT validation successful");
+      return true;
+    } else {
+      fail_msg_writer() << tr("NFT validation failed");
+      return true;
+    }
+  } catch (const std::exception &e) {
+    fail_msg_writer() << tr("Error validating NFT: ") << e.what();
+    return true;
+  }
 }
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::on_new_block(uint64_t height, const cryptonote::block& block)

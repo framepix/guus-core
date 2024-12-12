@@ -277,9 +277,21 @@ namespace cryptonote
         }
     }
 
+    for (const auto& field : tx_extra_fields) {
+        if (field.type() == typeid(tx_extra_nft)) {
+            nft_data = boost::get<tx_extra_nft>(field);
+            return true;
+        }
+    }
+
     return false;
    }
   //----------------------------------------------------------------------
+   bool add_nft_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_nft& nft) {
+    tx_extra_field field = nft;
+    return add_tx_extra_field_to_tx_extra(tx_extra, field);
+   }
+  //-------------------------------------------------------------------------
   bool is_v1_tx(const blobdata_ref& tx_blob)
   {
     uint64_t version;

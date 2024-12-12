@@ -51,6 +51,8 @@
 #include "cryptonote_basic/cryptonote_stat_info.h"
 #include "warnings.h"
 #include "crypto/hash.h"
+#include "nft.h"
+
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)
 
@@ -921,6 +923,16 @@ namespace cryptonote
       * @return true iff success
       */
      bool prune_blockchain(uint32_t pruning_seed = 0);
+
+     /**
+      * NFT
+      *
+      */
+     bool create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner, transaction& tx);
+
+     bool transfer_nft(const crypto::hash& nft_token_id, const std::string& current_owner, const std::string& new_owner, transaction& tx);
+
+     bool validate_nft(const transaction& tx, tx_verification_context& tvc);
 
      /**
       * @brief incrementally prunes blockchain
