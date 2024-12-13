@@ -95,7 +95,17 @@ namespace cryptonote
   // result.
   extern std::future<std::pair<blink_result, std::string>> (*quorumnet_send_blink)(void *self, const std::string &tx_blob);
   extern bool init_core_callback_complete;
-
+  // NFT Data Structure
+  struct nft_data {
+    uint64_t token_id;
+    std::string owner;
+    struct {
+        std::string name;
+        std::string description;
+        std::string image_url;
+    } metadata;
+    std::string unique_id; // Hash of the NFT
+   };
 
   /************************************************************************/
   /*                                                                      */
@@ -928,11 +938,32 @@ namespace cryptonote
       * NFT
       *
       */
-     bool create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner, transaction& tx);
+    bool create_nft(const std::string& name,
+                    const std::string& description,
+                    const std::string& image_url,
+                    uint64_t token_id,
+                    const std::string& owner,
+                    transaction& tx);
 
-     bool transfer_nft(const crypto::hash& nft_token_id, const std::string& current_owner, const std::string& new_owner, transaction& tx);
+    bool transfer_nft(const crypto::hash& nft_token_id,
+                      const std::string& current_owner,
+                      const std::string& new_owner,
+                      transaction& tx);
 
-     bool validate_nft(const transaction& tx, tx_verification_context& tvc);
+    bool validate_nft(const transaction& tx, tx_verification_context& tvc);
+
+    bool add_nft_to_tx_extra(std::vector<uint8_t>& extra, const nft_data& nft);
+    bool check_nft_data(const Blockchain& blockchain,
+                        const transaction& tx,
+                        tx_verification_context& tvc);
+
+    bool prepare_tx_sources(uint64_t amount,
+                            std::vector<tx_source_entry>& sources,
+                            uint64_t& found_amount);
+
+    bool prepare_tx_destinations(uint64_t amount,
+                                 const cryptonote::account_public_address& recipient,
+                                 std::vector<tx_destination_entry>& destinations);
 
      /**
       * @brief incrementally prunes blockchain

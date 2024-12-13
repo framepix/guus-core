@@ -1523,154 +1523,224 @@ namespace cryptonote
 
     return true;
   }
-  //----------------------------------------------------------------------------------------------
-  bool core::create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner, transaction& tx)
-  {
-  // Convert owner string to account_public_address for validation
-  cryptonote::account_public_address addr;
-  if (!cryptonote::get_account_address_from_str(addr, m_nettype, owner))
-  {
-    MERROR("Invalid owner address: " << owner);
-    return false;
-  }
-
-  // Check if NFT already exists
-  if (m_blockchain_storage.nft_exists(token_id))
-  {
-    MERROR("NFT with token_id " << token_id << " already exists");
-    return false;
-  }
-
-  // Create NFT data
-  nft_data nft;
-  if (!create_nft(name, description, image_url, token_id, owner, nft))
-  {
-    MERROR("Failed to create NFT data");
-    return false;
-  }
-
-  // Prepare transaction inputs and outputs
-  std::vector<tx_source_entry> sources;
-  std::vector<tx_destination_entry> destinations;
-  std::vector<uint8_t> extra;
-
-  // Get unspent amounts from wallet
-  std::vector<uint64_t> unspent_amounts = m_wallet.get_unspent_amounts_vector(); // Assuming 'm_wallet' is an instance of wallet2 or similar
-
-  uint64_t needed_amount = NFT_CREATION_FEE;
-  uint64_t available_amount = 0;
-  for (const auto &amount : unspent_amounts)
-  {
-    if (amount > 0) // Skip RCT outputs which have amount set to 0
+ //----------------------------------------------------------------------------------------------
+bool core::create_nft(const std::string& name, const std::string& description, const std::string& image_url, uint64_t token_id, const std::string& owner, transaction& tx)
+{
+    // Convert owner string to account_public_address for validation
+    cryptonote::account_public_address addr;
+    if (!cryptonote::get_account_address_from_str(addr, m_nettype, owner))
     {
-      tx_source_entry src;
-      // Here, you'd need to query for the actual outputs. Since we only have amounts, 
-      // we're making some assumptions:
-      // - We'll assume each amount corresponds to a single output for simplicity.
-      // - You'll need to implement get_output_by_amount to find the actual output details.
-      
-      output_data output = get_output_by_amount(amount); // You need to implement this function
-      if (output.amount == amount)
-      {
-        src.amount = amount;
-        src.real_output = output.output_index;
-        src.real_out_tx_key = output.tx_key;
-        src.real_output_in_tx_index = output.output_in_tx_index;
-        src.outputs.push_back(std::make_pair(output.global_output_index, output.output_key));
-        src.masked = false;
-        src.rct = false; // Assuming not RCT since we're using explicit amounts
-
-        sources.push_back(src);
-        available_amount += amount;
-
-        if (available_amount >= needed_amount)
-          break; // We have enough funds for the NFT creation fee
-      }
+        MERROR("Invalid owner address: " << owner);
+        return false;
     }
-  }
 
-  // If we don't have enough funds, handle it appropriately
-  if (available_amount < needed_amount)
-  {
-    MERROR("Insufficient funds to cover NFT creation fee. Available: " << print_money(available_amount) << ", Needed: " << print_money(needed_amount));
-    return false;
-  }
+    // Check if NFT with the given token ID already exists
+    if (m_blockchain_storage.nft_exists(token_id))
+    {
+        MERROR("NFT with token_id " << token_id << " already exists");
+        return false;
+    }
 
-  // Set up destination for NFT creation fee
-  destinations.push_back({NFT_CREATION_FEE, addr, false});
+    // Create NFT metadata
+    nft_data nft;
+    if (!create_nft(name, description, image_url, token_id, owner, nft))
+    {
+        MERROR("Failed to create NFT metadata");
+        return false;
+    }
 
-  // Handle change if we have more funds than needed
-  if (available_amount > needed_amount)
-  {
-    destinations.push_back({available_amount - needed_amount, addr, false});
-  }
+    // Prepare transaction inputs and outputs
+    std::vector<tx_source_entry> sources;
+    std::vector<tx_destination_entry> destinations;
+    std::vector<uint8_t> extra;
 
-  // Add NFT data to transaction extra
-  if (!add_nft_to_tx_extra(tx, nft))
-  {
-    MERROR("Failed to add NFT data to transaction extra");
-    return false;
-  }
+    // Prepare sources (inputs)
+    if (!prepare_tx_sources(NFT_CREATION_FEE, sources))
+    {
+        MERROR("Insufficient funds to cover NFT creation fee");
+        return false;
+    }
 
-  // Construct transaction
-  if (!construct_tx(m_mempool.get_account_keys(), sources, destinations, boost::none, extra, tx, 0, guus_construct_tx_params{m_blockchain_storage.get_current_hard_fork_version()}, boost::optional<tx_extra_nft>(nft)))
-  {
-    MERROR("Failed to construct NFT creation transaction");
-    return false;
-  }
+    // Prepare destinations (outputs)
+    if (!prepare_tx_destinations(addr, sources, NFT_CREATION_FEE, destinations))
+    {
+        MERROR("Failed to prepare transaction destinations");
+        return false;
+    }
 
-  return true;
-  }
- //---------------------------------------------------------------------------------------------------------
-   bool core::transfer_nft(const crypto::hash& nft_token_id, const std::string& current_owner, const std::string& new_owner, transaction& tx)
-  {
-  nft_data nft;
-  if (!m_blockchain_storage.get_nft_by_id(nft_token_id, nft))
-  {
-    MERROR("NFT with token_id " << nft_token_id << " not found");
-    return false;
-  }
+    // Add NFT data to transaction extra
+    if (!add_nft_to_tx_extra(extra, nft))
+    {
+        MERROR("Failed to add NFT data to transaction extra");
+        return false;
+    }
 
-  if (nft.owner != current_owner)
-  {
-    MERROR("Current owner does not match for NFT with token_id " << nft_token_id);
-    return false;
-  }
-
-  cryptonote::account_public_address current_owner_addr, new_owner_addr;
-  if (!cryptonote::get_account_address_from_str(current_owner_addr, m_nettype, current_owner) ||
-      !cryptonote::get_account_address_from_str(new_owner_addr, m_nettype, new_owner))
-  {
-    MERROR("Invalid owner address");
-    return false;
-  }
-
-  // Update NFT ownership
-  nft.owner = new_owner;
-
-  // Prepare transaction - this would involve real inputs from the current owner's wallet
-  std::vector<tx_source_entry> sources; // Placeholder, actual source setup needed
-  std::vector<tx_destination_entry> destinations = {{0, new_owner_addr, false}}; // No payment for transfer, just ownership change
-  std::vector<uint8_t> extra;
-
-  if (!add_nft_to_tx_extra(tx, nft))
-  {
-    MERROR("Failed to add updated NFT data to transaction extra for transfer");
-    return false;
-  }
-
-  if (!construct_tx(m_mempool.get_account_keys(), sources, destinations, boost::none, extra, tx, 0, guus_construct_tx_params{m_blockchain_storage.get_current_hard_fork_version()}, boost::optional<tx_extra_nft>(nft)))
-  {
-    MERROR("Failed to construct NFT transfer transaction");
-    return false;
-   }
+    // Construct the transaction
+    if (!construct_tx(m_mempool.get_account_keys(), sources, destinations, boost::none, extra, tx, 0, 
+                      guus_construct_tx_params{m_blockchain_storage.get_current_hard_fork_version()}, 
+                      boost::optional<tx_extra_nft>(nft)))
+    {
+        MERROR("Failed to construct NFT creation transaction");
+        return false;
+    }
 
     return true;
   }
-  //---------------------------------------------------------------------------------------------
-  bool core::validate_nft(const transaction& tx, tx_verification_context& tvc)
+ //---------------------------------------------------------------------------------------------------------
+  bool core::transfer_nft(const crypto::hash& nft_token_id, const std::string& current_owner, const std::string& new_owner, transaction& tx)
   {
-    return check_nft_data(m_blockchain_storage, tx, tvc);
+    nft_data nft;
+    // Fetch NFT details by its unique token ID
+    if (!m_blockchain_storage.get_nft_by_id(nft_token_id, nft))
+    {
+        MERROR("NFT with token_id " << nft_token_id << " not found");
+        return false;
+    }
+
+    // Validate current ownership
+    if (nft.owner != current_owner)
+    {
+        MERROR("Current owner does not match for NFT with token_id " << nft_token_id);
+        return false;
+    }
+
+    cryptonote::account_public_address current_owner_addr, new_owner_addr;
+
+    // Validate and parse both current and new owner addresses
+    if (!cryptonote::get_account_address_from_str(current_owner_addr, m_nettype, current_owner) ||
+        !cryptonote::get_account_address_from_str(new_owner_addr, m_nettype, new_owner))
+    {
+        MERROR("Invalid owner address");
+        return false;
+    }
+
+    // Update NFT ownership
+    nft.owner = new_owner;
+
+    // Prepare inputs and outputs for the transaction
+    std::vector<tx_source_entry> sources;
+    if (!prepare_tx_sources(current_owner_addr, NFT_TRANSFER_FEE_HF16, sources))
+    {
+        MERROR("Failed to prepare transaction sources for NFT transfer");
+        return false;
+    }
+
+    std::vector<tx_destination_entry> destinations;
+    if (!prepare_tx_destinations(current_owner_addr, new_owner_addr, sources, NFT_TRANSFER_FEE_HF16, destinations))
+    {
+        MERROR("Failed to prepare transaction destinations for NFT transfer");
+        return false;
+    }
+
+    // Add NFT data to transaction extra
+    std::vector<uint8_t> extra;
+    if (!add_nft_to_tx_extra(extra, nft))
+    {
+        MERROR("Failed to add updated NFT data to transaction extra");
+        return false;
+    }
+
+    // Construct the transaction
+    if (!construct_tx(m_mempool.get_account_keys(), sources, destinations, boost::none, extra, tx, 0,
+                      cryptonote::construct_tx_params{m_blockchain_storage.get_current_hard_fork_version()}, 
+                      boost::optional<tx_extra_nft>(nft)))
+    {
+        MERROR("Failed to construct NFT transfer transaction");
+        return false;
+    }
+
+    return true;
+   }
+  //---------------------------------------------------------------------------------------------
+  bool core::prepare_tx_sources(uint64_t needed_amount, std::vector<tx_source_entry>& sources)
+  {
+    uint64_t available_amount = 0;
+    std::vector<output_data> unspent_outputs = m_wallet.get_unspent_outputs(); // Implement or call the wallet's method to retrieve unspent outputs
+
+    for (const auto& output : unspent_outputs)
+    {
+        if (output.amount > 0) // Skip zero-amount outputs (typical for RingCT)
+        {
+            tx_source_entry src;
+            src.amount = output.amount;
+            src.real_output = output.output_index;
+            src.real_out_tx_key = output.tx_key;
+            src.real_output_in_tx_index = output.output_in_tx_index;
+            src.outputs.push_back(std::make_pair(output.global_output_index, output.output_key));
+            src.masked = false;
+            src.rct = false; // Assuming non-RingCT for simplicity
+
+            sources.push_back(src);
+            available_amount += output.amount;
+
+            if (available_amount >= needed_amount)
+                break; // Stop once we have enough funds
+        }
+    }
+
+    if (available_amount < needed_amount)
+        return false; // Insufficient funds
+
+    return true;
+   }
+  //---------------------------------------------------------------------------------------------
+    bool core::prepare_tx_destinations(const cryptonote::account_public_address& owner_addr,
+                                   const std::vector<tx_source_entry>& sources,
+                                   uint64_t fee,
+                                   std::vector<tx_destination_entry>& destinations)
+    {
+    uint64_t total_amount = 0;
+    for (const auto& source : sources)
+    {
+        total_amount += source.amount;
+    }
+
+    if (total_amount < fee)
+        return false; // Sanity check
+
+    // Add destination for the NFT creation fee
+    destinations.push_back({fee, owner_addr, false});
+
+    // Handle change
+    uint64_t change = total_amount - fee;
+    if (change > 0)
+    {
+        destinations.push_back({change, owner_addr, false});
+    }
+
+    return true;
+   }
+  //---------------------------------------------------------------------------------------------
+  bool core::add_nft_to_tx_extra(std::vector<uint8_t>& extra, const nft_data& nft)
+  {
+    std::string serialized_nft_data;
+    if (!serialize_nft_data(nft, serialized_nft_data))
+    {
+        MERROR("Failed to serialize NFT data");
+        return false;
+    }
+
+    std::string encoded_nft_data;
+    if (!tools::base58::encode(serialized_nft_data, encoded_nft_data))
+    {
+        MERROR("Failed to encode NFT data to Base58");
+        return false;
+    }
+
+    extra.insert(extra.end(), encoded_nft_data.begin(), encoded_nft_data.end());
+    return true;
+    }
+  //---------------------------------------------------------------------------------------------
+   bool core::validate_nft(const transaction& tx, tx_verification_context& tvc)
+   {
+    if (!check_nft_data(m_blockchain_storage, tx, tvc))
+    {
+        MERROR("NFT validation failed for transaction: " << get_transaction_hash(tx));
+        tvc.m_verifivation_failed = true; // Mark the verification context as failed
+        return false;
+    }
+    MINFO("NFT validation passed for transaction: " << get_transaction_hash(tx));
+    return true;
    }
   //-----------------------------------------------------------------------------------------------
   bool core::is_key_image_spent(const crypto::key_image &key_image) const

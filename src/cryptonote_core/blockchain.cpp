@@ -1096,88 +1096,96 @@ bool Blockchain::rollback_blockchain_switching(const std::list<block_and_checkpo
 //------------------------------------------------------------------
 void blockchain::index_nfts()
 {
-  std::lock_guard<std::mutex> lock(nft_index_mutex);
-  nft_index.clear(); // Clear existing index before re-indexing
+    std::lock_guard<std::mutex> lock(nft_index_mutex);
+    nft_index.clear();
 
-  uint64_t height = get_current_blockchain_height();
-  for (uint64_t h = 1; h <= height; ++h) // Start from block 1, assuming genesis block has no NFTs
-  {
-    block b;
-    std::vector<transaction> txs;
-    if (!get_block_by_height(h, b, txs))
+    uint64_t height = get_current_blockchain_height();
+    for (uint64_t h = 1; h <= height; ++h) // Start from block 1
     {
-      MERROR("Failed to get block at height " << h << " during NFT indexing");
-      continue; // Skip this block if there's an error
-    }
+        block b;
+        std::vector<transaction> txs;
 
-    for (const auto &tx : txs)
-    {
-      tx_extra_nft nft_data;
-      if (check_tx_extra(tx.extra, nft_data))
-      {
-        crypto::hash nft_hash = crypto::cn_fast_hash(&nft_data.token_id, sizeof(nft_data.token_id));
-        nft_index[nft_data.token_id] = nft_hash;
-      }
+        if (!get_block_by_height(h, b, txs))
+        {
+            MERROR("Failed to get block at height " << h << " during NFT indexing");
+            continue;
+        }
+
+        for (const auto &tx : txs)
+        {
+            tx_extra_nft nft_data;
+            if (check_tx_extra(tx.extra, nft_data))
+            {
+                // Hash the token ID for indexing
+                crypto::hash nft_hash = crypto::cn_fast_hash(&nft_data.token_id, sizeof(nft_data.token_id));
+
+                // Store the token ID and hash in the index
+                nft_index[nft_data.token_id] = nft_hash;
+            }
+        }
     }
-  }
 }
-//------------------------------------------------------
+//------------------------------------------------------------------------
 bool blockchain::nft_exists(uint64_t token_id) const
 {
-  std::lock_guard<std::mutex> lock(nft_index_mutex);
-  return nft_index.find(token_id) != nft_index.end();
+    std::lock_guard<std::mutex> lock(nft_index_mutex);
+    return nft_index.find(token_id) != nft_index.end();
 }
 //-------------------------------------------------------------------------
 bool blockchain::get_nft_by_id(const crypto::hash& token_id, nft_data& nft) const
 {
-  // First, check if we have the token ID in our index
-  std::lock_guard<std::mutex> lock(nft_index_mutex);
-  auto it = std::find_if(nft_index.begin(), nft_index.end(), 
-                         [&token_id](const auto& pair) { return pair.second == token_id; });
-  
-  if (it == nft_index.end())
-  {
-    MDEBUG("NFT with hash " << token_id << " not found in index");
+    std::lock_guard<std::mutex> lock(nft_index_mutex);
+
+    // Find the token in the index
+    auto it = std::find_if(nft_index.begin(), nft_index.end(),
+                           [&token_id](const auto& pair) { return pair.second == token_id; });
+
+    if (it == nft_index.end())
+    {
+        MDEBUG("NFT with hash " << token_id << " not found in index");
+        return false;
+    }
+
+    uint64_t id = it->first;
+
+    // Retrieve the NFT data from the blockchain
+    uint64_t height = get_current_blockchain_height();
+    for (uint64_t h = height; h > 0; --h)
+    {
+        block b;
+        std::vector<transaction> txs;
+        if (!get_block_by_height(h, b, txs))
+        {
+            MERROR("Failed to get block at height " << h);
+            continue;
+        }
+
+        for (const auto &tx : txs)
+        {
+            tx_extra_nft nft_data;
+            if (check_tx_extra(tx.extra, nft_data) && nft_data.token_id == id)
+            {
+                nft = nft_data;
+                return true;
+            }
+        }
+    }
+
+    MWARNING("NFT with token_id " << id << " found in index but not in blockchain");
     return false;
-  }
-
-  // If found in index, now search the blockchain for the full NFT data
-  uint64_t id = it->first;
-  uint64_t height = get_current_blockchain_height();
-  for (uint64_t h = height; h > 0; --h)
-  {
-    block b;
-    std::vector<transaction> txs;
-    if (!get_block_by_height(h, b, txs))
-    {
-      MERROR("Failed to get block at height " << h);
-      continue;
-    }
-
-    for (const auto &tx : txs)
-    {
-      tx_extra_nft nft_data;
-      if (check_tx_extra(tx.extra, nft_data) && nft_data.token_id == id)
-      {
-        nft = nft_data;
-        return true;
-      }
-    }
-  }
-  
-  MWARNING("NFT with token_id " << id << " found in index but not in blockchain");
-  return false;
 }
 //-------------------------------------------------------------------------------------
 void blockchain::get_all_nft_hashes(std::vector<crypto::hash>& nft_hashes) const
 {
-  std::lock_guard<std::mutex> lock(nft_index_mutex);
+    std::lock_guard<std::mutex> lock(nft_index_mutex);
 
-  // Reserve space to avoid unnecessary reallocations
-  nft_hashes.reserve(nft_index.size());
+    nft_hashes.reserve(nft_index.size());
 
-  // Use boost::transform to populate nft_hashes with all the hash values from the index
-  boost::push_back(nft_hashes, nft_index | boost::adaptors::transformed([](const auto& pair) { return pair.second; }));
+    // Populate hashes from the index
+    for (const auto& entry : nft_index)
+    {
+        nft_hashes.push_back(entry.second);
+    }
 }
 //-------------------------------------------------------------------------------------------------
 bool blockchain::is_valid_address(const cryptonote::account_public_address& addr) const
@@ -4150,21 +4158,30 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
       return_tx_to_pool(txs);
       return false;
     }
-
     // Check if this transaction has NFT data
     nft::nft_data nft;
     if (extract_nft_from_transaction(tx_tmp, nft)) {
-        // If the transaction contains NFT data, create and store the NFT
-        // (TODO): Modify the create_nft function to store NFT data in the blockchain as needed
-        bool nft_created = nft::create_nft(nft.metadata.name, nft.metadata.description, nft.metadata.image_url,
-                                           nft.token_id, nft.owner, nft, tx_tmp);
-        if (!nft_created) {
-            MERROR_VER("Failed to create NFT in transaction " << tx_id);
-            bvc.m_verifivation_failed = true;
-            return_tx_to_pool(txs);
-            return false;
-        }
+    // Verify if the NFT already exists in the blockchain index
+    if (m_blockchain_storage.nft_exists(nft.token_id)) {
+        MERROR_VER("Duplicate NFT detected with token_id: " << nft.token_id << " in transaction " << tx_id);
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        return false;
     }
+
+    // Add the NFT data to the blockchain's NFT index
+    crypto::hash nft_hash = crypto::cn_fast_hash(&nft.token_id, sizeof(nft.token_id));
+    {
+        std::lock_guard<std::mutex> lock(nft_index_mutex); // Ensure thread safety for index access
+        m_blockchain_storage.nft_index[nft.token_id] = nft_hash;
+    }
+
+    // Optionally, log the creation for debugging purposes
+    MINFO("NFT created and indexed with token_id: " << nft.token_id 
+          << ", owner: " << nft.owner 
+          << ", hash: " << epee::string_tools::pod_to_hex(nft_hash));
+    }
+
     TIME_MEASURE_FINISH(bb);
     t_pool += bb;
     // add the transaction to the temp list of transactions, so we can either

@@ -53,15 +53,20 @@ namespace boost
   {
 
   //---------------------------------------------------
-   template <class Archive>
-   inline void serialize(Archive &a, cryptonote::tx_extra_nft &x, const boost::serialization::version_type ver)
-  {
+  template <class Archive>
+  inline void serialize(Archive& a, cryptonote::tx_extra_nft& x, const boost::serialization::version_type ver) {
     a & x.token_id;
     a & x.owner;
     a & x.name;
     a & x.description;
     a & x.image_url;
-  }
+
+    // If backward compatibility or versioning is required:
+    if (ver > 0) {
+        // Serialize additional fields for newer versions here
+    }
+   }
+
   template <class Archive>
   inline void serialize(Archive &a, crypto::public_key &x, const boost::serialization::version_type ver)
   {

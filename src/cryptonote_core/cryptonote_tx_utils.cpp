@@ -1034,9 +1034,9 @@ namespace cryptonote
 
     // Validate:
     // - NFT name, description, and image_url should be checked against any content policy or size limits
-    if (nft_data.name.size() > NFT_MAX_NAME_LENGTH ||
-        nft_data.description.size() > NFT_MAX_DESC_LENGTH ||
-        nft_data.image_url.size() > NFT_MAX_URL_LENGTH) {
+    if (nft_data.metadata.name.size() > NFT_MAX_NAME_LENGTH ||
+        nft_data.metadata.description.size() > NFT_MAX_DESC_LENGTH ||
+        nft_data.metadata.image_url.size() > NFT_MAX_URL_LENGTH) {
         MERROR("NFT data exceeds size limits: name(" << nft_data.name.size() << "), description(" << nft_data.description.size() << "), image_url(" << nft_data.image_url.size() << ")");
         return false;
     }
