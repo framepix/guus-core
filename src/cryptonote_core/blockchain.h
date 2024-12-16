@@ -257,6 +257,8 @@ namespace cryptonote
      */
     bool cleanup_handle_incoming_blocks(bool force_sync = false);
 
+
+    bool is_contract_transaction(const cryptonote::transaction& tx);
     /**
      * @brief search the blockchain for a transaction by hash
      *

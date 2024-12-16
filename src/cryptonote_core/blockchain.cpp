@@ -163,14 +163,16 @@ bool Blockchain::scan_outputkeys_for_indexes(const txin_to_key& tx_in_to_key, vi
   //auto lock = tools::unique_lock(*this);
 
   // verify that the input has key offsets (that it exists properly, really)
-  if(!tx_in_to_key.key_offsets.size())
+  if(tx_in_to_key.key_offsets.empty())
+  {
+    MERROR("Transaction input has no key offsets");
     return false;
+  }
 
   // cryptonote_format_utils uses relative offsets for indexing to the global
   // outputs list.  that is to say that absolute offset #2 is absolute offset
   // #1 plus relative offset #2.
-  // TODO: Investigate if this is necessary / why this is done.
-  std::vector<uint64_t> absolute_offsets = relative_output_offsets_to_absolute(tx_in_to_key.key_offsets);
+  std::vector<uint64_t> absolute_offsets = cryptonote::relative_output_offsets_to_absolute(tx_in_to_key.key_offsets);
   std::vector<output_data_t> outputs;
 
   bool found = false;
@@ -189,45 +191,45 @@ bool Blockchain::scan_outputkeys_for_indexes(const txin_to_key& tx_in_to_key, vi
   {
     try
     {
-      m_db->get_output_key(epee::span<const uint64_t>(&tx_in_to_key.amount, 1), absolute_offsets, outputs, true);
-      if (absolute_offsets.size() != outputs.size())
-      {
-        MERROR_VER("Output does not exist! amount = " << tx_in_to_key.amount);
-        return false;
-      }
-    }
-    catch (...)
+    m_db->get_output_key(epee::span<const uint64_t>(&tx_in_to_key.amount, 1), absolute_offsets, outputs, true);
+    if (absolute_offsets.size() != outputs.size())
     {
-      MERROR_VER("Output does not exist! amount = " << tx_in_to_key.amount);
+        MERROR("Output does not exist! amount = " << cryptonote::print_money(tx_in_to_key.amount));
+        return false;
+    }
+    }
+    catch (const std::exception& e)
+    {
+    MERROR("Failed to get output keys: " << e.what() << " for amount = " << cryptonote::print_money(tx_in_to_key.amount));
       return false;
     }
   }
   else
   {
     // check for partial results and add the rest if needed;
-    if (outputs.size() < absolute_offsets.size() && outputs.size() > 0)
+    if (outputs.size() < absolute_offsets.size() && !outputs.empty())
     {
-      MDEBUG("Additional outputs needed: " << absolute_offsets.size() - outputs.size());
-      std::vector < uint64_t > add_offsets;
+      MDEBUG("Additional outputs needed: " << (absolute_offsets.size() - outputs.size()));
+      std::vector<uint64_t> add_offsets;
       std::vector<output_data_t> add_outputs;
       add_outputs.reserve(absolute_offsets.size() - outputs.size());
-      for (size_t i = outputs.size(); i < absolute_offsets.size(); i++)
+      for (size_t i = outputs.size(); i < absolute_offsets.size(); ++i)
         add_offsets.push_back(absolute_offsets[i]);
       try
       {
         m_db->get_output_key(epee::span<const uint64_t>(&tx_in_to_key.amount, 1), add_offsets, add_outputs, true);
         if (add_offsets.size() != add_outputs.size())
         {
-          MERROR_VER("Output does not exist! amount = " << tx_in_to_key.amount);
+          MERROR("Output does not exist! amount = " << cryptonote::print_money(tx_in_to_key.amount));
           return false;
         }
+        outputs.insert(outputs.end(), add_outputs.begin(), add_outputs.end());
       }
-      catch (...)
+      catch (const std::exception& e)
       {
-        MERROR_VER("Output does not exist! amount = " << tx_in_to_key.amount);
+        MERROR("Failed to get additional output keys: " << e.what() << " for amount = " << cryptonote::print_money(tx_in_to_key.amount));
         return false;
       }
-      outputs.insert(outputs.end(), add_outputs.begin(), add_outputs.end());
     }
   }
 
@@ -237,24 +239,20 @@ bool Blockchain::scan_outputkeys_for_indexes(const txin_to_key& tx_in_to_key, vi
     try
     {
       output_data_t output_index;
-      try
+      if (count < outputs.size())
       {
-        // get tx hash and output index for output
-        if (count < outputs.size())
-          output_index = outputs.at(count);
-        else
-          output_index = m_db->get_output_key(tx_in_to_key.amount, i);
-
-        // call to the passed boost visitor to grab the public key for the output
-        if (!vis.handle_output(output_index.unlock_time, output_index.pubkey, output_index.commitment))
-        {
-          MERROR_VER("Failed to handle_output for output no = " << count << ", with absolute offset " << i);
-          return false;
-        }
+        output_index = outputs[count];
       }
-      catch (...)
+      else
       {
-        MERROR_VER("Output does not exist! amount = " << tx_in_to_key.amount << ", absolute_offset = " << i);
+        // Fallback in case outputs vector wasn't populated fully
+        output_index = m_db->get_output_key(tx_in_to_key.amount, i);
+      }
+
+      // call to the passed boost visitor to grab the public key for the output
+      if (!vis.handle_output(output_index.unlock_time, output_index.pubkey, output_index.commitment))
+      {
+        MERROR("Failed to handle_output for output no = " << count << ", with absolute offset " << i);
         return false;
       }
 
@@ -268,19 +266,12 @@ bool Blockchain::scan_outputkeys_for_indexes(const txin_to_key& tx_in_to_key, vi
           *pmax_related_block_height = h;
         }
       }
-
     }
-    catch (const OUTPUT_DNE& e)
+    catch (const std::exception& e)
     {
-      MERROR_VER("Output does not exist: " << e.what());
+      MERROR("Error while processing output: " << e.what() << " for amount = " << cryptonote::print_money(tx_in_to_key.amount) << " at offset " << i);
       return false;
     }
-    catch (const TX_DNE& e)
-    {
-      MERROR_VER("Transaction does not exist: " << e.what());
-      return false;
-    }
-
   }
 
   return true;
@@ -3826,6 +3817,17 @@ bool Blockchain::flush_txes_from_pool(const std::vector<crypto::hash> &txids)
   }
   return res;
 }
+
+//------------------------------------------------------------------
+bool Blockchain::is_contract_transaction(const cryptonote::transaction& tx) {
+    // Check if tx.extra contains contract-specific data
+    for (const auto& extra : tx.extra) {
+        if (extra == TX_EXTRA_TAG_NONCE_DEPLOY_CONTRACT || extra == TX_EXTRA_TAG_NONCE_CALL_CONTRACT) {
+            return true;
+        }
+    }
+    return false;
+}
 //------------------------------------------------------------------
 //      Needs to validate the block and acquire each transaction from the
 //      transaction mem_pool, then pass the block and transactions to
@@ -3882,31 +3884,6 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     bvc.m_verifivation_failed = true;
     return false;
   }
-
-    // New validation for smart contract transactions
-    for (const auto& tx_hash : bl.tx_hashes) {
-      cryptonote::blobdata tx_blob;
-    
-    // Get the transaction blob by hash
-    if (!m_db->get_tx_blob(tx_hash, tx_blob)) {
-        MERROR("Failed to get transaction blob for tx: " << tx_hash);
-        return false;
-    }
-
-    // Parse the blob into a transaction object
-    cryptonote::transaction tx;
-    if (!parse_and_validate_tx_from_blob(tx_blob, tx)) {
-        MERROR("Failed to parse transaction blob for tx: " << tx_hash);
-        return false;
-    }
-
-    // Validate the smart contract transaction
-    if (!validate_contract_tx(tx)) {
-        MERROR("Invalid smart contract transaction in block " << get_block_height(bl));
-        return false;
-     }
-   }
-
 
   TIME_MEASURE_FINISH(t2);
   //check proof of work
@@ -4284,6 +4261,39 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
   std::shared_ptr<tools::Notify> block_notify = m_block_notify;
   if (block_notify)
     block_notify->notify("%s", epee::string_tools::pod_to_hex(id).c_str(), NULL);
+
+   // New validation for smart contract transactions
+    for (const auto& tx_hash : bl.tx_hashes) {
+    cryptonote::blobdata tx_blob;
+
+    // Get the transaction blob by hash
+    try {
+        if (!m_db->get_tx_blob(tx_hash, tx_blob)) {
+            MERROR("Failed to get transaction blob for tx: " << tx_hash);
+            return false;
+        }
+    }
+    catch (const std::exception& e) {
+        MERROR("Database error while fetching transaction blob for tx: " << tx_hash << ": " << e.what());
+        return false;
+    }
+
+    // Parse the blob into a transaction object
+    cryptonote::transaction tx;
+    if (!parse_and_validate_tx_from_blob(tx_blob, tx)) {
+        MERROR("Failed to parse transaction blob for tx: " << tx_hash);
+        return false;
+    }
+
+    // Check if this transaction is a smart contract transaction
+    if (is_contract_transaction(tx)) {
+        // Validate the smart contract transaction
+        if (!validate_contract_tx(tx)) {
+            MERROR("Invalid smart contract transaction in block " << get_block_height(bl));
+            return false;
+        }
+    }
+}
 
   return true;
 }
