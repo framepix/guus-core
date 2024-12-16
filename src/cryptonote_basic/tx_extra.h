@@ -47,22 +47,33 @@
 #define TX_EXTRA_NONCE                          0x02
 #define TX_EXTRA_MERGE_MINING_TAG               0x03
 #define TX_EXTRA_TAG_ADDITIONAL_PUBKEYS         0x04
-#define TX_EXTRA_TAG_FRAME_PIX_REGISTER      0x70
-#define TX_EXTRA_TAG_FRAME_PIX_DEREG_OLD     0x71
-#define TX_EXTRA_TAG_FRAME_PIX_WINNER        0x72
-#define TX_EXTRA_TAG_FRAME_PIX_CONTRIBUTOR   0x73
-#define TX_EXTRA_TAG_FRAME_PIX_PUBKEY        0x74
+#define TX_EXTRA_TAG_NONCE_DEPLOY_CONTRACT      0x05
+#define TX_EXTRA_TAG_FRAME_PIX_REGISTER         0x70
+#define TX_EXTRA_TAG_FRAME_PIX_DEREG_OLD        0x71
+#define TX_EXTRA_TAG_FRAME_PIX_WINNER           0x72
+#define TX_EXTRA_TAG_FRAME_PIX_CONTRIBUTOR      0x73
+#define TX_EXTRA_TAG_FRAME_PIX_PUBKEY           0x74
 #define TX_EXTRA_TAG_TX_SECRET_KEY              0x75
 #define TX_EXTRA_TAG_TX_KEY_IMAGE_PROOFS        0x76
 #define TX_EXTRA_TAG_TX_KEY_IMAGE_UNLOCK        0x77
-#define TX_EXTRA_TAG_FRAME_PIX_STATE_CHANGE  0x78
+#define TX_EXTRA_TAG_FRAME_PIX_STATE_CHANGE     0x78
 #define TX_EXTRA_TAG_BURN                       0x79
 #define TX_EXTRA_TAG_GUUS_NAME_SYSTEM           0x7A
+#define TX_EXTRA_TAG_VM_CODE                    0x7B
+#define TX_EXTRA_TAG_CONTRACT_BYTECODE          0x7C
 
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG       0xDE
 
+#define TX_EXTRA_TAG_NONCE_CALL_CONTRACT      0x80
+
 #define TX_EXTRA_NONCE_PAYMENT_ID               0x00
 #define TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID     0x01
+
+
+// Maximum limits for contract-related fields
+constexpr size_t MAX_BYTECODE_SIZE = 65536; // 64 KB
+constexpr uint64_t MAX_GAS_LIMIT = 2000000;
+
 
 namespace lns
 {
@@ -202,6 +213,31 @@ namespace cryptonote
       return true;
     }
   };
+
+  // Structure for contract-related data in tx.extra
+  struct tx_extra_contract_data {
+    uint64_t gas_limit;              // Gas limit for contract execution
+    uint64_t gas_price;              // Gas price per unit of gas
+    std::string contract_address;    // Target contract address
+    std::vector<uint8_t> bytecode;   // Contract bytecode or function call data
+    bool is_contract_call;           // Whether this is a contract call or deployment
+    std::vector<uint8_t> call_data;  // Encoded function call parameters 
+
+    BEGIN_SERIALIZE()
+        FIELD(gas_limit)
+        FIELD(gas_price)
+        FIELD(contract_address)
+        FIELD(bytecode)
+        FIELD(is_contract_call)
+        FIELD(call_data)
+    END_SERIALIZE()
+   };
+
+   bool parse_contract_data_from_extra(const std::vector<uint8_t>& extra, tx_extra_contract_data& contract_data);
+
+   bool add_extra_field(std::vector<uint8_t>& extra, uint8_t tag, const std::vector<uint8_t>& data);
+
+   bool add_extra_nonce_to_tx_extra(std::vector<uint8_t>& tx_extra, uint8_t nonce_type);
 
   struct tx_extra_pub_key
   {
@@ -548,6 +584,35 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+  // Structure to represent VM code or related metadata
+  struct tx_extra_vm_code
+  {
+    uint8_t vm_version;             // VM version to interpret the code
+    std::vector<uint8_t> bytecode;  // Serialized VM bytecode
+    uint64_t gas_limit;             // Execution gas limit for this code
+
+    BEGIN_SERIALIZE()
+      FIELD(vm_version)             // Serialize the VM version
+      FIELD(bytecode)               // Serialize the bytecode as raw data
+      FIELD(gas_limit)              // Serialize the gas limit
+    END_SERIALIZE()
+  };
+
+  struct tx_extra_deploy_contract {
+    std::vector<uint8_t> bytecode; // This could be how you store the contract bytecode
+
+    BEGIN_SERIALIZE()
+        FIELD(bytecode)
+    END_SERIALIZE()
+  };
+
+   struct tx_extra_call_contract {
+    std::vector<uint8_t> call_data;  // Encoded name and arguments
+
+    BEGIN_SERIALIZE()
+        FIELD(call_data)
+    END_SERIALIZE()
+   };
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;
   //   varint size;
@@ -568,7 +633,10 @@ namespace cryptonote
                          tx_extra_tx_key_image_proofs,
                          tx_extra_tx_key_image_unlock,
                          tx_extra_burn,
-                         tx_extra_guus_name_system
+                         tx_extra_guus_name_system,
+                         tx_extra_vm_code,
+                         tx_extra_deploy_contract,
+                         tx_extra_call_contract
                         > tx_extra_field;
 }
 
@@ -592,3 +660,6 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_proofs,         TX
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_unlock,         TX_EXTRA_TAG_TX_KEY_IMAGE_UNLOCK);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_burn,                        TX_EXTRA_TAG_BURN);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_guus_name_system,            TX_EXTRA_TAG_GUUS_NAME_SYSTEM);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_vm_code,                     TX_EXTRA_TAG_VM_CODE);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_deploy_contract,             TX_EXTRA_TAG_NONCE_DEPLOY_CONTRACT);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_call_contract,             TX_EXTRA_TAG_NONCE_CALL_CONTRACT);

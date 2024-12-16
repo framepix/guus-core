@@ -35,6 +35,9 @@
 #include "ringct/rctOps.h"
 #include "cryptonote_core/frame_pix_list.h"
 
+
+const size_t MAX_CONTRACT_BYTECODE_SIZE = 10240;
+
 namespace cryptonote
 {
   //---------------------------------------------------------------
@@ -57,6 +60,7 @@ namespace cryptonote
     frame_pixs::block_winner block_winner;
     uint64_t                    batched_governance = 0; // NOTE: 0 until hardfork v10, then use blockchain::calc_batched_governance_reward
   };
+
 
   bool construct_miner_tx(
       size_t height,
@@ -199,6 +203,29 @@ namespace cryptonote
                                       std::vector<crypto::public_key> &additional_tx_public_keys,
                                       std::vector<rct::key> &amount_keys,
                                       crypto::public_key &out_eph_public_key) ;
+
+    bool construct_tx_base(
+    const std::vector<tx_source_entry>& sources,
+    const std::vector<tx_destination_entry>& destinations,
+    const std::vector<uint8_t>& contract_bytecode, // For including contract bytecode
+    transaction& tx,
+    uint64_t unlock_time,
+    crypto::secret_key& tx_key,
+    std::vector<crypto::secret_key>& additional_tx_keys,
+    bool rct,
+    const rct::RCTConfig& rct_config);
+
+    bool construct_tx_with_contract(
+    const std::vector<tx_source_entry>& sources,
+    const std::vector<tx_destination_entry>& destinations,
+    const std::vector<uint8_t>& contract_bytecode,
+    transaction& tx,
+    uint64_t unlock_time,
+    crypto::secret_key& tx_key,
+    std::vector<crypto::secret_key>& additional_tx_keys,
+    bool rct,
+    const rct::RCTConfig& rct_config);
+
 
   bool generate_genesis_block(
       block& bl

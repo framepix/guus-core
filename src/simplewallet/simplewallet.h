@@ -49,6 +49,7 @@
 #include "common/i18n.h"
 #include "common/password.h"
 #include "crypto/crypto.h"  // for definition of crypto::secret_key
+#include "cryptonote_core/guus_vm.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "wallet.simplewallet"
@@ -268,7 +269,8 @@ namespace cryptonote
     bool net_stats(const std::vector<std::string>& args);
     bool welcome(const std::vector<std::string>& args);
     bool version(const std::vector<std::string>& args);
-
+    bool deploy_contract(const std::vector<std::string>& args);
+    bool call_contract(const std::vector<std::string>& args);
     bool register_frame_pix_main(
         const std::vector<std::string>& frame_pix_key_as_str,
         const cryptonote::account_public_address& address,
@@ -319,6 +321,7 @@ namespace cryptonote
      */
     void commit_or_save(std::vector<tools::wallet2::pending_tx>& ptx_vector, bool do_not_relay, bool blink);
 
+    bool execute_contract(const std::vector<std::string>& args);
     /*!
      * \brief checks whether background mining is enabled, and asks to configure it if not
      */
@@ -422,6 +425,9 @@ namespace cryptonote
 
     std::unique_ptr<tools::wallet2> m_wallet;
     refresh_progress_reporter_t m_refresh_progress_reporter;
+
+    // Convert a hex string to a vector of bytes
+    std::vector<uint8_t> convert_hex_to_bytes(const std::string& hex);
 
     std::atomic<bool> m_idle_run;
     boost::thread m_idle_thread;

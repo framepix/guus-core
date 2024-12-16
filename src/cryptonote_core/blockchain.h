@@ -102,6 +102,7 @@ namespace cryptonote
   class Blockchain
   {
   public:
+    bool validate_contract_tx(const cryptonote::transaction& tx);
     /**
      * @brief container for passing a block and metadata about it on the blockchain
      */
@@ -1060,6 +1061,8 @@ namespace cryptonote
 #ifndef IN_UNIT_TESTS
   private:
 #endif
+
+    uint64_t calculate_min_fee(uint64_t gas_limit, uint64_t gas_price) const;
 
     bool load_missing_blocks_into_guus_subsystems();
 

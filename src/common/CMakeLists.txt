@@ -50,6 +50,7 @@ add_library(common
   updates.cpp
   aligned.c
   timings.cc
+  hex.cpp
   combinator.cpp)
 
 if (STACK_TRACE)

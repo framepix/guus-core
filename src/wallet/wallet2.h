@@ -330,6 +330,24 @@ private:
     friend class wallet_keys_unlocker;
     friend class wallet_device_callback;
   public:
+    /**
+     * Deploy a new smart contract.
+     * @param contract_code The smart contract bytecode as a hex string.
+     * @param tx A reference to the transaction object to populate.
+     * @return True if the contract deployment transaction was successfully created, false otherwise.
+     */
+    bool deploy_contract(const std::string& contract_code, cryptonote::transaction& tx);
+
+    /**
+     * Call an existing smart contract.
+     * @param contract_address The address of the deployed contract.
+     * @param function The name of the contract function to call.
+     * @param args A vector of string arguments for the contract function.
+     * @param tx A reference to the transaction object to populate.
+     * @return True if the contract call transaction was successfully created, false otherwise.
+     */
+    bool call_contract(const std::string& contract_address, const std::string& function, const std::vector<std::string>& args, cryptonote::transaction& tx);
+
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
     enum RefreshType {
       RefreshFull,
@@ -1582,6 +1600,21 @@ private:
 
     std::atomic<bool> m_long_poll_disabled;
   private:
+    /**
+     * Convert a hex string to a vector of bytes.
+     * @param hex The input hex string.
+     * @return A vector of uint8_t representing the converted bytes.
+     */
+    std::vector<uint8_t> convert_hex_to_bytes(const std::string& hex);
+
+    /**
+     * Encode function call data for a smart contract.
+     * @param function The name of the contract function.
+     * @param args A vector of string arguments for the function.
+     * @return A string representing the encoded call data.
+     */
+    std::string encode_call_data(const std::string& function, const std::vector<std::string>& args);
+
     /*!
      * \brief  Stores wallet information to wallet file.
      * \param  keys_file_name Name of wallet file

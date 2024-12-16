@@ -45,6 +45,7 @@
 #include "crypto/crypto.h"
 #include "ringct/rctTypes.h"
 #include "ringct/rctOps.h"
+#include "tx_extra.h"
 
 //namespace cryptonote {
 namespace boost
@@ -53,6 +54,20 @@ namespace boost
   {
 
   //---------------------------------------------------
+  // Serialization for tx_extra_field variant
+  template <class Archive>
+  inline void serialize(Archive &a, cryptonote::tx_extra_field &x, const unsigned int /*version*/) {
+    // Use Boost.Serialization to serialize the variant
+    a & boost::serialization::make_nvp("tx_extra_field", x);
+  }
+
+  // Specialization for tx_extra_vm_code
+  template <class Archive>
+  inline void serialize(Archive &a, cryptonote::tx_extra_vm_code &x, const unsigned int /*version*/) {
+    a & boost::serialization::make_nvp("vm_version", x.vm_version);  // Serialize VM version
+    a & boost::serialization::make_nvp("bytecode", x.bytecode);      // Serialize bytecode
+    a & boost::serialization::make_nvp("gas_limit", x.gas_limit);    // Serialize gas limit
+  }
   template <class Archive>
   inline void serialize(Archive &a, crypto::public_key &x, const boost::serialization::version_type ver)
   {

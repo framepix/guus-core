@@ -39,6 +39,8 @@
 #include "crypto/hash.h"
 #include <unordered_map>
 
+typedef uint64_t varint_t;
+
 namespace epee
 {
   class wipeable_string;
@@ -48,6 +50,10 @@ namespace frame_pixs { struct quorum_vote_t; }
 
 namespace cryptonote
 {
+  bool is_valid_contract_address(const std::string& address);
+  bool is_hex(const std::string& str);
+
+  bool is_valid_contract_address(const std::string& address);
   struct tx_verification_context;
   struct vote_verification_context;
   //---------------------------------------------------------------

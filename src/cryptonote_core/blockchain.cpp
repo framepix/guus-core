@@ -60,6 +60,8 @@
 #include "common/varint.h"
 #include "common/pruning.h"
 #include "common/lock.h"
+#include <blockchain_db/blockchain_db.h>
+#include "guus_vm.h"
 
 #ifdef ENABLE_SYSTEMD
 extern "C" {
@@ -3881,6 +3883,31 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     return false;
   }
 
+    // New validation for smart contract transactions
+    for (const auto& tx_hash : bl.tx_hashes) {
+      cryptonote::blobdata tx_blob;
+    
+    // Get the transaction blob by hash
+    if (!m_db->get_tx_blob(tx_hash, tx_blob)) {
+        MERROR("Failed to get transaction blob for tx: " << tx_hash);
+        return false;
+    }
+
+    // Parse the blob into a transaction object
+    cryptonote::transaction tx;
+    if (!parse_and_validate_tx_from_blob(tx_blob, tx)) {
+        MERROR("Failed to parse transaction blob for tx: " << tx_hash);
+        return false;
+    }
+
+    // Validate the smart contract transaction
+    if (!validate_contract_tx(tx)) {
+        MERROR("Invalid smart contract transaction in block " << get_block_height(bl));
+        return false;
+     }
+   }
+
+
   TIME_MEASURE_FINISH(t2);
   //check proof of work
   TIME_MEASURE_START(target_calculating_time);
@@ -4265,6 +4292,84 @@ bool Blockchain::prune_blockchain(uint32_t pruning_seed)
 {
   auto lock = tools::unique_locks(m_tx_pool, *this);
   return m_db->prune_blockchain(pruning_seed);
+}
+//-----------------------------------------------------------------
+uint64_t Blockchain::calculate_min_fee(uint64_t gas_limit, uint64_t gas_price) const {
+    // Fee is determined by gas usage: gas_limit * gas_price
+    return gas_limit * gas_price;
+}
+//------------------------------------------------------------------
+bool Blockchain::validate_contract_tx(const cryptonote::transaction& tx) {
+    try {
+        // Check if the transaction contains contract-related data
+        if (tx.extra.empty()) {
+            MERROR("Transaction has no extra field; cannot validate as a contract transaction.");
+            return false;
+        }
+
+        // Parse the extra field for contract-specific markers
+        cryptonote::tx_extra_contract_data contract_data;
+        if (!cryptonote::parse_contract_data_from_extra(tx.extra, contract_data)) {
+            MERROR("Failed to parse contract data from transaction extra.");
+            return false;
+        }
+
+        // Check gas limit validity
+        if (contract_data.gas_limit == 0 || contract_data.gas_limit > MAX_GAS_LIMIT) {
+            MERROR("Invalid gas limit in contract transaction.");
+            return false;
+        }
+
+        // Check bytecode validity
+        if (contract_data.bytecode.empty()) {
+            MERROR("Contract bytecode is empty.");
+            return false;
+        }
+
+        if (contract_data.bytecode.size() > MAX_BYTECODE_SIZE) {
+            MERROR("Contract bytecode exceeds the maximum allowed size.");
+            return false;
+        }
+
+        // Validate the structure of the bytecode using a virtual machine (optional)
+        MoneroVM vm(contract_data.gas_limit);
+        if (!vm.validate_bytecode(contract_data.bytecode)) {
+            MERROR("Contract bytecode validation failed.");
+            return false;
+        }
+
+        // Additional checks for contract calls
+        if (contract_data.is_contract_call) {
+            // Check if the target contract address is valid
+            if (!cryptonote::is_valid_contract_address(contract_data.contract_address)) {
+                MERROR("Invalid target contract address in contract call.");
+                return false;
+            }
+
+            // Validate encoded function call data
+            if (contract_data.call_data.empty() || contract_data.call_data.size() > MAX_CALL_DATA_SIZE) {
+                MERROR("Invalid or oversized call data in contract transaction.");
+                return false;
+            }
+        }
+
+        // Check gas price and fee sufficiency
+        uint64_t min_required_fee = calculate_min_fee(contract_data.gas_limit, contract_data.gas_price);
+        if (tx.rct_signatures.txnFee < min_required_fee) {
+            MERROR("Transaction fee is insufficient to cover gas costs.");
+            return false;
+        }
+
+        //TODO: More
+
+        return true; // Transaction passes all contract-specific validation
+    } catch (const std::exception& e) {
+        MERROR("Exception during contract transaction validation: " << e.what());
+        return false;
+    } catch (...) {
+        MERROR("Unknown error occurred during contract transaction validation.");
+        return false;
+    }
 }
 //------------------------------------------------------------------
 bool Blockchain::update_blockchain_pruning()

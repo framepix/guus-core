@@ -81,6 +81,8 @@
 #include "wallet/message_store.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include "string_coding.h"
+#include "cryptonote_core/guus_vm.h"
+#include "abi_utils.h"
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -279,6 +281,12 @@ namespace
   const char* USAGE_LNS_MAKE_UPDATE_MAPPING_SIGNATURE("lns_make_update_mapping_signature [owner=<value>] [backup_owner=<value>] [value=<lns_value>] <name>");
   const char* USAGE_LNS_PRINT_OWNERS_TO_NAMES("lns_print_owners_to_names [<owner>, ...]");
   const char* USAGE_LNS_PRINT_NAME_TO_OWNERS("lns_print_name_to_owners [type=<N1|all>[,<N2>...]] <name>");
+
+  const char* USAGE_EXECUTE_SMART_CONTRACT("execute_contract <bytecode> [optional: gas_limit] [optional: memory_limit]");
+
+  const char* USAGE_CALL_CONTRACT("call_contract <contract_address> <function> <args>");
+
+  const char* USAGE_DEPLOY_CONTRACT("deploy_contract <contract_code>");
 
 #if defined (GUUS_ENABLE_INTEGRATION_TEST_HOOKS)
   std::string input_line(const std::string &prompt, bool yesno = false)
@@ -1910,6 +1918,105 @@ bool simple_wallet::unset_ring(const std::vector<std::string> &args)
   return true;
 }
 
+//---------------------------------------------------------------------------
+  // Deploying contracts
+  bool simple_wallet::deploy_contract(const std::vector<std::string>& args) {
+    if (args.empty()) {
+        fail_msg_writer() << "Usage: deploy_contract <contract_code>";
+        return false;
+    }
+
+    std::string contract_code = args[0];
+    cryptonote::transaction tx;
+
+    try {
+        std::string bytecode_str;
+        if (!epee::string_tools::parse_hexstr_to_binbuff(contract_code, bytecode_str)) {
+            fail_msg_writer() << "Invalid contract code. Please provide valid bytecode.";
+            return false;
+        }
+
+        std::vector<uint8_t> bytecode(bytecode_str.begin(), bytecode_str.end());
+
+        // Deploy the contract using wallet2's deploy_contract function
+        if (!m_wallet->deploy_contract(contract_code, tx)) {
+            fail_msg_writer() << "Failed to deploy contract.";
+            return false;
+        }
+
+        // Prepare the transaction for sending
+        cryptonote::transaction tx;
+        std::vector<tools::wallet2::pending_tx> ptx_vector;
+        ptx_vector.push_back(tools::wallet2::pending_tx());
+        ptx_vector.back().tx = tx;
+
+        // Commit the transaction. Here, 'blink' is set to false as it's not specified
+        m_wallet->commit_tx(ptx_vector, false);
+
+        // Get the transaction hash another way since commit_tx doesn't return it
+        std::string tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(tx));
+
+        if (tx_hash.empty()) {
+            fail_msg_writer() << "Failed to get transaction hash for contract deployment.";
+            return false;
+        }
+
+        success_msg_writer() << "Contract deployment transaction sent. Transaction hash: " << tx_hash;
+        return true;
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "An error occurred while deploying the contract: " << e.what();
+        return false;
+    }
+  }
+//---------------------------------------------------------------------------
+
+// Calling contracts
+bool simple_wallet::call_contract(const std::vector<std::string>& args) {
+    // Parse arguments for calling contract function
+    if (args.size() < 3) {
+        fail_msg_writer() << "Usage: call_contract <contract_address> <function> <args>";
+        return false;
+    }
+
+    std::string contract_address = args[0];
+    std::string function_name = args[1];
+    std::vector<std::string> function_args(args.begin() + 2, args.end());
+
+    // You would create a transaction that represents calling the contract function here
+    cryptonote::transaction tx;
+
+    // Prepare the contract call data (this could be more complex depending on the contract ABI)
+    std::vector<uint8_t> call_data;
+    call_data.push_back(0x01); 
+    // Add function arguments to the call_data
+
+    // Call the contract using the MoneroVM (or via some other method)
+    MoneroVM moneroVM(10000, 1024 * 1024);  // Gas and memory limits
+    bool success = moneroVM.execute(call_data);
+
+    if (success) {
+        // Send the transaction with the contract call
+        // Example: send_transaction(tx);
+        success_msg_writer() << "Contract call successful!";
+        return true;
+    } else {
+        fail_msg_writer() << "Error calling contract function.";
+        return false;
+    }
+}
+//----------------------------------------------------------------------------
+//Convert a hex string to a vector of bytes
+std::vector<uint8_t> simple_wallet::convert_hex_to_bytes(const std::string& hex) {
+    std::vector<uint8_t> bytes;
+    size_t len = hex.length();
+    for (size_t i = 0; i < len; i += 2) {
+        uint8_t byte = (std::stoi(hex.substr(i, 2), nullptr, 16) & 0xFF);
+        bytes.push_back(byte);
+    }
+    return bytes;
+}
+
+//---------------------------------------------------------------------------
 bool simple_wallet::blackball(const std::vector<std::string> &args)
 {
   uint64_t amount = std::numeric_limits<uint64_t>::max(), offset, num_offsets;
@@ -2613,8 +2720,23 @@ simple_wallet::simple_wallet()
                            tr(USAGE_START_MINING),
                            tr("Start mining in the daemon (bg_mining and ignore_battery are optional booleans)."));
   m_cmd_binder.set_handler("stop_mining",
-      boost::bind(&simple_wallet::stop_mining, this, _1),
-      tr("Stop mining in the daemon."));
+                          boost::bind(&simple_wallet::stop_mining, this, _1),
+                          tr("Stop mining in the daemon."));
+    m_cmd_binder.set_handler("deploy_contract",
+                           boost::bind(&simple_wallet::deploy_contract, this, _1),
+                           tr(USAGE_DEPLOY_CONTRACT),
+                           tr("Deploy a new smart contract"));
+
+    m_cmd_binder.set_handler("call_contract",
+                           boost::bind(&simple_wallet::call_contract, this, _1),
+                           tr(USAGE_CALL_CONTRACT),
+                           tr("Call a contract function"));
+
+  m_cmd_binder.set_handler("execute_contract",
+                          boost::bind(&simple_wallet::execute_contract, this, _1),
+                          tr(USAGE_EXECUTE_SMART_CONTRACT),
+                          tr("Execute a Guus smart contract in the Guus VM"));
+
   m_cmd_binder.set_handler("set_daemon",
                            boost::bind(&simple_wallet::set_daemon, this, _1),
                            tr(USAGE_SET_DAEMON),
@@ -3130,7 +3252,73 @@ simple_wallet::~simple_wallet()
       m_long_poll_thread.join();
 }
 
-//----------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------------------
+bool simple_wallet::execute_contract(const std::vector<std::string>& args) {
+    try {
+        if (args.size() < 3) {
+            throw std::runtime_error("Usage: execute_contract <contract_address> <function_signature> <arg_type1>:<arg_value1> <arg_type2>:<arg_value2> ...");
+        }
+
+        std::string contract_address = args[0];
+        std::string function_signature = args[1];
+        std::vector<std::pair<std::string, std::string>> function_args;
+
+        for (size_t i = 2; i < args.size(); ++i) {
+            size_t pos = args[i].find(':');
+            if (pos == std::string::npos) {
+                throw std::runtime_error("Arguments must be in the format <type>:<value>");
+            }
+            function_args.emplace_back(args[i].substr(0, pos), args[i].substr(pos + 1));
+        }
+
+        // Encode function call using ABI utilities
+        std::string call_data = abi_utils::encode_function_call(function_signature, function_args);
+
+        // Convert call data to bytecode for VM execution
+        std::string bytecode_str;
+        if (!epee::string_tools::parse_hexstr_to_binbuff(call_data, bytecode_str)) {
+            throw std::runtime_error("Failed to convert call data to bytecode.");
+        }
+        std::vector<uint8_t> bytecode(bytecode_str.begin(), bytecode_str.end());
+
+        // Simulate execution to check if it's valid
+        MoneroVM vm(100000); // Example gas limit
+        if (!vm.execute(bytecode)) {
+            throw std::runtime_error("Contract execution failed during validation.");
+        }
+
+        cryptonote::transaction tx;
+
+        // Add the bytecode to the transaction's extra field for actual execution on-chain
+        std::string error_msg;
+        if (!add_extra_field(tx.extra, TX_EXTRA_TAG_NONCE_CALL_CONTRACT, bytecode)) {
+            throw std::runtime_error("Failed to add call data to transaction extra: " + error_msg);
+        }
+
+        // Prepare the transaction for sending
+        std::vector<tools::wallet2::pending_tx> ptx_vector;
+        ptx_vector.push_back(tools::wallet2::pending_tx());
+        ptx_vector.back().tx = tx;
+
+        // Commit the transaction
+        m_wallet->commit_tx(ptx_vector, false); // Here, 'blink' is set to false
+
+        // Get the transaction hash
+        std::string tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(tx));
+
+        if (tx_hash.empty()) {
+            throw std::runtime_error("Failed to get transaction hash for contract execution.");
+        }
+
+        success_msg_writer() << "Contract function executed. Transaction hash: " << tx_hash;
+         return true;
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "An error occurred while executing the contract: " << e.what(); 
+         return false;
+    }
+}
+
+//--------------------------------------------------------------------------
 bool simple_wallet::set_variable(const std::vector<std::string> &args)
 {
   if (args.empty())

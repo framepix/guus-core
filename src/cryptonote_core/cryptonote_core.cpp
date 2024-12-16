@@ -1257,6 +1257,20 @@ namespace cryptonote
   //-----------------------------------------------------------------------------------------------
   bool core::handle_incoming_tx(const blobdata& tx_blob, tx_verification_context& tvc, const tx_pool_options &opts)
   {
+    // Parse and validate the transaction from the blob
+    cryptonote::transaction tx;
+    if (!parse_and_validate_tx_from_blob(tx_blob, tx)) {
+        MERROR("Failed to parse transaction from blob");
+        tvc.m_verifivation_failed = true;
+        return false;
+    }
+
+    // Validate smart contract transactions
+    if (!m_blockchain_storage.validate_contract_tx(tx)) {
+        MERROR("Contract transaction validation failed");
+        tvc.m_verifivation_failed = true;
+        return false;
+    }
     const std::vector<cryptonote::blobdata> tx_blobs{{tx_blob}};
     auto parsed = handle_incoming_txs(tx_blobs, opts);
     parsed[0].blob = &tx_blob; // Update pointer to the input rather than the copy in case the caller wants to use it for some reason

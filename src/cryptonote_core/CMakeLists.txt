@@ -39,6 +39,7 @@ add_library(cryptonote_core
   guus_name_system.cpp
   tx_pool.cpp
   tx_sanity_check.cpp
+  guus_vm.cpp
   miner.cpp
   cryptonote_tx_utils.cpp)
 

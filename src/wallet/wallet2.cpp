@@ -29,6 +29,7 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
+#include <stdexcept>
 #include <numeric>
 #include <tuple>
 #include <boost/format.hpp>
@@ -86,6 +87,7 @@ using namespace epee;
 #include "common/guus_integration_test_hooks.h"
 #include "lns.h"
 #include "string_coding.h"
+#include "cryptonote_core/guus_vm.h"
 
 extern "C"
 {
@@ -1622,6 +1624,146 @@ static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &
     return 0;
   }
 }
+//----------------------------------------------------------------------------------------------------
+// Deploy a new smart contract
+bool wallet2::deploy_contract(const std::string& contract_code, cryptonote::transaction& tx) {
+    try {
+        // Validate the contract code which can include checks for size, formatting
+        if (contract_code.empty()) {
+            MERROR("Contract code is empty");
+            return false;
+        }
+
+        // Convert the contract code to bytecode
+        std::vector<uint8_t> bytecode = convert_hex_to_bytes(contract_code);
+        if (bytecode.empty()) {
+            MERROR("Failed to parse contract code into bytecode");
+            return false;
+        }
+
+        // Create MoneroVM instance
+        uint64_t initial_gas = 100000;
+        MoneroVM monero_vm(initial_gas);
+
+        // Simulate deployment to ensure bytecode is valid
+        bool success = monero_vm.execute(bytecode);
+        if (!success) {
+            MERROR("Contract execution failed during validation");
+            return false;
+        }
+
+        // Create a contract deployment transaction
+        cryptonote::tx_destination_entry destination;
+        destination.amount = 0;  // Smart contract deployment typically has 0 output
+        destination.addr = get_address();  // Use the wallet's address as the sender
+
+        std::vector<uint8_t> tx_extra;
+        if (!add_extra_field(tx_extra, TX_EXTRA_TAG_NONCE_DEPLOY_CONTRACT, bytecode)) {
+            MERROR("Failed to add deploy_contract to tx.extra");
+            return false;
+        }
+
+        std::vector<cryptonote::tx_destination_entry> destinations = {destination};
+
+        // Construct the transaction
+        boost::optional<uint8_t> hf_version = get_hard_fork_version();
+        std::string fail_reason;
+        guus_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::standard, 0); // Assuming standard transaction type for deployment
+
+        std::vector<pending_tx> ptx_vector = create_transactions_2(destinations, CRYPTONOTE_DEFAULT_TX_MIXIN, 0 /*unlock_time*/, 0 /*priority*/, tx_extra, 0 /*subaddr_account*/, std::set<uint32_t>{} /*subaddr_indices*/, tx_params);
+
+        if (ptx_vector.empty()) {
+            MERROR("Failed to create transaction: " << fail_reason);
+            return false;
+        }
+
+        tx = std::move(ptx_vector[0].tx);
+        MWARNING("Contract deployment transaction created but not broadcasted");
+        return true;
+
+    } catch (const std::exception& e) {
+        MERROR("Exception in deploy_contract: " << e.what());
+        return false;
+    }
+   }
+//-------------------------------------------------------------------------------------------------
+// Call an existing smart contract
+bool wallet2::call_contract(const std::string& contract_address, const std::string& function, const std::vector<std::string>& args, cryptonote::transaction& tx) {
+    try {
+        // Validate inputs
+        if (contract_address.empty() || function.empty()) {
+            MERROR("Contract address or function name is empty");
+            return false;
+        }
+
+        // Prepare call data: encode the function name and arguments
+        std::string call_data = encode_call_data(function, args);
+
+        // Create MoneroVM instance to validate the call
+        uint64_t initial_gas = 50000;  // Example gas value
+        MoneroVM monero_vm(initial_gas);
+
+        std::vector<uint8_t> bytecode = convert_hex_to_bytes(call_data);
+        if (!monero_vm.execute(bytecode)) {
+            MERROR("Contract execution failed during validation");
+            return false;
+        }
+
+        // Create a contract call transaction
+        cryptonote::tx_destination_entry destination;
+        destination.amount = 0;  // Contract call typically has 0 output
+        destination.addr = get_address();  // Use the wallet's address as the sender
+
+        std::vector<uint8_t> tx_extra;
+        if (!add_extra_field(tx_extra, TX_EXTRA_TAG_NONCE_CALL_CONTRACT, bytecode)) {
+            MERROR("Failed to add call_contract to tx.extra");
+            return false;
+        }
+
+        std::vector<cryptonote::tx_destination_entry> destinations = {destination};
+
+        // Construct the transaction
+        boost::optional<uint8_t> hf_version = get_hard_fork_version();
+        std::string fail_reason;
+        guus_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::standard, 0); // Assuming standard transaction type for call
+
+        std::vector<pending_tx> ptx_vector = create_transactions_2(destinations, CRYPTONOTE_DEFAULT_TX_MIXIN, 0 /*unlock_time*/, 0 /*priority*/, tx_extra, 0 /*subaddr_account*/, std::set<uint32_t>{} /*subaddr_indices*/, tx_params);
+
+        if (ptx_vector.empty()) {
+            MERROR("Failed to create transaction: " << fail_reason);
+            return false;
+        }
+
+        tx = std::move(ptx_vector[0].tx);
+        MWARNING("Contract call transaction created but not broadcasted");
+        return true;
+
+    } catch (const std::exception& e) {
+        MERROR("Exception in call_contract: " << e.what());
+        return false;
+    }
+  }
+//--------------------------------------------------------------------------------------------------
+// Convert hex string to bytes
+std::vector<uint8_t> wallet2::convert_hex_to_bytes(const std::string& hex) {
+    std::vector<uint8_t> bytes;
+    size_t len = hex.length();
+    for (size_t i = 0; i < len; i += 2) {
+        uint8_t byte = (std::stoi(hex.substr(i, 2), nullptr, 16) & 0xFF);
+        bytes.push_back(byte);
+    }
+    return bytes;
+}
+//---------------------------------------------------------------------------------------------------
+// Encode call data
+std::string wallet2::encode_call_data(const std::string& function, const std::vector<std::string>& args) {
+    std::string encoded = function;
+    for (const auto& arg : args) {
+        encoded += " " + arg;
+    }
+    return encoded;
+}
+
 //----------------------------------------------------------------------------------------------------
 void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t vout_index, tx_scan_info_t &tx_scan_info, std::vector<tx_money_got_in_out> &tx_money_got_in_outs, std::vector<size_t> &outs, bool pool, bool blink)
 {

@@ -28,6 +28,7 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 guus_add_executable(simplewallet "guus-wallet-cli"
+  abi_utils.cpp
   simplewallet.cpp
   )
 target_link_libraries(simplewallet

@@ -48,9 +48,17 @@ using namespace epee;
 
 using namespace crypto;
 
+#define MAX_TX_SIZE 262144
+
 namespace cryptonote
 {
   //---------------------------------------------------------------
+  // Check if transaction size is within limits (pseudo code)
+  bool check_tx_size_limits(const transaction& tx) {
+    // Implement size checking logic here
+    return tx.extra.size() < MAX_TX_SIZE;
+  }
+
   static void classify_addresses(const std::vector<tx_destination_entry> &destinations, const boost::optional<cryptonote::tx_destination_entry>& change_addr, size_t &num_stdaddresses, size_t &num_subaddresses, account_public_address &single_dest_subaddress)
   {
     num_stdaddresses = 0;
@@ -211,6 +219,20 @@ namespace cryptonote
     div128_64(hi, lo, STAKING_PORTIONS, &rewardhi, &rewardlo);
     return rewardlo;
   }
+
+    bool add_extra_field(std::vector<uint8_t>& extra, uint8_t tag, const std::vector<uint8_t>& data) {
+        extra.push_back(tag);
+        uint32_t size = static_cast<uint32_t>(data.size()); 
+        extra.insert(extra.end(), reinterpret_cast<const uint8_t*>(&size), reinterpret_cast<const uint8_t*>(&size) + sizeof(uint32_t));
+        extra.insert(extra.end(), data.begin(), data.end());
+        return true;
+    }
+
+    bool add_extra_nonce_to_tx_extra(std::vector<uint8_t>& tx_extra, uint8_t nonce_type) {
+    tx_extra.push_back(TX_EXTRA_NONCE); // First, indicate that this is a nonce
+    tx_extra.push_back(nonce_type);     // Then, the type of nonce
+    return true;
+    }
 
   static uint64_t calculate_sum_of_portions(const std::vector<frame_pixs::payout_entry>& payouts, uint64_t total_frame_pix_reward)
   {
@@ -969,6 +991,134 @@ namespace cryptonote
      return construct_tx_and_get_tx_key(sender_account_keys, subaddresses, sources, destinations_copy, change_addr, extra, tx, unlock_time, tx_key, additional_tx_keys, rct_config, NULL, tx_params);
   }
   //---------------------------------------------------------------
+  bool construct_tx_base(
+    const std::vector<tx_source_entry>& sources,
+    const std::vector<tx_destination_entry>& destinations,
+    const std::vector<uint8_t>& contract_bytecode, // Added for contract bytecode
+    transaction& tx,
+    uint64_t unlock_time,
+    crypto::secret_key& tx_key,
+    std::vector<crypto::secret_key>& additional_tx_keys,
+    bool rct,
+    const rct::RCTConfig& rct_config)
+{
+    hw::device &hwdev = hw::get_device("default");  // Assuming there's a default hardware wallet interface
+    hwdev.open_tx(tx_key);
+
+    // Classify addresses to determine if additional keys are needed
+    size_t num_stdaddresses = 0;
+    size_t num_subaddresses = 0;
+    account_public_address single_dest_subaddress;
+
+    std::unordered_map<crypto::public_key, subaddress_index> subaddresses;
+    
+    // Placeholder for sender account keys since we don't have them here
+    account_keys sender_account_keys;  // This should be populated in real use
+
+    classify_addresses(destinations, boost::none, num_stdaddresses, num_subaddresses, single_dest_subaddress);
+    bool need_additional_txkeys = num_subaddresses > 0 && (num_stdaddresses > 0 || num_subaddresses > 1);
+    if (need_additional_txkeys)
+    {
+        additional_tx_keys.clear();
+        for (const auto &d : destinations)
+            additional_tx_keys.push_back(keypair::generate(hwdev).sec);
+    }
+
+    // Prepare for transaction construction
+    std::vector<tx_destination_entry> destinations_copy = destinations;
+    rct::RCTConfig used_rct_config = rct_config;  // Use the provided config
+
+    // Construct the transaction
+    bool r = construct_tx_with_tx_key(sender_account_keys, subaddresses, 
+                                      const_cast<std::vector<tx_source_entry>&>(sources), 
+                                      destinations_copy, boost::none, tx.extra, 
+                                      tx, unlock_time, tx_key, additional_tx_keys, 
+                                      used_rct_config, nullptr, true /*shuffle_outs*/, 
+                                      guus_construct_tx_params{} /* default params */);
+
+    if (!r) {
+        MERROR("Failed to construct transaction with tx key");
+        hwdev.close_tx();
+        return false;
+    }
+
+    // Add contract bytecode to tx.extra
+    if (!contract_bytecode.empty()) {
+        if (!add_extra_field(tx.extra, TX_EXTRA_TAG_VM_CODE, contract_bytecode)) {
+            MERROR("Failed to add contract bytecode to transaction extra");
+            hwdev.close_tx();
+            return false;
+        }
+    } else {
+        MWARNING("Contract bytecode is empty, no contract data added to transaction");
+    }
+
+    // Final size check (simplified example)
+    if (!check_tx_size_limits(tx)) {
+        MERROR("Transaction size exceeds limits after adding contract bytecode");
+        hwdev.close_tx();
+        return false;
+    }
+
+    hwdev.close_tx();
+    return true;
+   }
+  //------------------------------------------------------------
+  // Construct a transaction with embedded contract data
+  bool construct_tx_with_contract(
+    const std::vector<cryptonote::tx_source_entry>& sources,
+    const std::vector<cryptonote::tx_destination_entry>& destinations,
+    const std::vector<uint8_t>& contract_bytecode,
+    transaction& tx,
+    uint64_t unlock_time,
+    crypto::secret_key& tx_key,
+    std::vector<crypto::secret_key>& additional_tx_keys,
+    bool rct,
+    rct::RCTConfig rct_config)
+{
+    try {
+        // Base transaction construction
+        if (!construct_tx_base(sources, destinations, contract_bytecode, tx, unlock_time, tx_key, additional_tx_keys, rct, rct_config)) {
+            MERROR("Failed to construct transaction base with contract bytecode");
+            return false;
+        }
+
+        // Validate the contract bytecode
+        if (contract_bytecode.empty()) {
+            MERROR("Contract bytecode is empty");
+            return false;
+        }
+
+        if (contract_bytecode.size() > MAX_CONTRACT_BYTECODE_SIZE) {
+            MERROR("Contract bytecode exceeds maximum allowed size");
+            return false;
+        }
+
+        // Embed contract bytecode into the transaction
+        std::vector<uint8_t> extra_with_contract = tx.extra;
+
+        // Add the contract bytecode as a specific tag in the tx.extra field
+        if (!add_extra_field(extra_with_contract, TX_EXTRA_TAG_CONTRACT_BYTECODE, contract_bytecode)) {
+            MERROR("Failed to add contract bytecode to transaction extra");
+            return false;
+        }
+
+        // Replace the transaction's extra with the updated one
+        tx.extra = std::move(extra_with_contract);
+
+        // Additional verifications (if necessary, e.g., size limits)
+        if (!check_tx_size_limits(tx)) {
+            MERROR("Transaction size exceeds limits after adding contract bytecode");
+            return false;
+        }
+
+        return true;
+    } catch (const std::exception& e) {
+        MERROR("Exception during transaction construction with contract: " << e.what());
+        return false;
+    }
+}
+//-------------------------------------------------------------------------------------
   bool generate_genesis_block(
       block& bl
     , std::string const & genesis_tx

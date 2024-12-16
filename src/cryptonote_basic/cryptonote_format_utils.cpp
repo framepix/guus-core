@@ -31,10 +31,13 @@
 
 #include <atomic>
 #include <boost/algorithm/string.hpp>
+#include <boost/variant.hpp>
 #include "wipeable_string.h"
 #include "string_tools.h"
 #include "common/i18n.h"
 #include "common/osrb.h"
+#include "common/hex.h"
+#include <hex.h>
 #include "serialization/string.h"
 #include "cryptonote_format_utils.h"
 #include "cryptonote_config.h"
@@ -44,8 +47,14 @@
 #include "cryptonote_basic/verification_context.h"
 #include "cryptonote_core/frame_pix_voting.h"
 #include "cryptonote_core/guus_name_system.h"
+#include <stdexcept>
+#include <string>
+
 
 using namespace epee;
+
+#define MAX_CONTRACT_ADDRESS_LENGTH 106
+#define CONTRACT_ADDRESS_PREFIX 'C'
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "cn"
@@ -310,7 +319,153 @@ namespace cryptonote
 
     return generate_key_image_helper_precomp(ack, out_key, subaddr_recv_info->derivation, real_output_index, subaddr_recv_info->index, in_ephemeral, ki, hwdev);
   }
+  //--------------------------------------------------------------
+    bool is_hex(const std::string& str) {
+    if (str.empty()) return false;
+
+    for (char c : str) {
+        if (!std::isxdigit(static_cast<unsigned char>(c))) {
+            return false;
+        }
+    }
+    return true;
+    }
+
   //---------------------------------------------------------------
+  bool is_valid_contract_address(const std::string& address) {
+    try {
+        // Check if address is empty or exceeds maximum length
+        if (address.empty() || address.length() != MAX_CONTRACT_ADDRESS_LENGTH + 1) {
+            MERROR("Invalid contract address: Address length is incorrect. Expected: " 
+                   << (MAX_CONTRACT_ADDRESS_LENGTH + 1) << ", Actual: " << address.length());
+            return false;
+        }
+
+        // Validate address prefix
+        if (address[0] != CONTRACT_ADDRESS_PREFIX) {
+            MERROR("Invalid contract address: Does not start with the correct prefix '" 
+                   << CONTRACT_ADDRESS_PREFIX << "'. Address: " << address);
+            return false;
+        }
+
+        // Validate that the rest of the string consists of hexadecimal characters
+        std::string address_body = address.substr(1);
+        if (!is_hex(address_body)) {
+            MERROR("Invalid contract address: Contains non-hexadecimal characters. Address: " << address);
+            return false;
+        }
+
+        // Perform checksum validation (hypothetical example)
+        crypto::hash hash;
+        crypto::cn_fast_hash(address_body.data(), address_body.size(), hash);
+        std::string checksum = common::iss_hex(reinterpret_cast<const unsigned char*>(hash.data), 4); // First 4 bytes of hash as checksum
+        std::string expected_prefix = address.substr(address.length() - 8, 8); // Last 4 bytes in hex
+
+        if (checksum != expected_prefix) {
+            MERROR("Invalid contract address: Checksum mismatch. Address: " << address);
+            return false;
+        }
+
+        MINFO("Contract address validated successfully. Address: " << address);
+        return true;
+    } catch (const std::exception &e) {
+        MERROR("Exception while validating contract address: " << e.what());
+        return false;
+    } catch (...) {
+        MERROR("Unknown exception while validating contract address.");
+        return false;
+    }
+   }
+  //--------------------------------------------------------------------------------------
+   bool parse_varint_from_blob(const std::vector<uint8_t>& blob, size_t& offset, varint_t& v) {
+    v = 0;
+    for (size_t shift = 0; shift < 64; shift += 7) {
+        if (offset >= blob.size()) return false;
+        uint8_t byte = blob[offset++];
+        v |= uint64_t(byte & 0x7F) << shift;
+        if ((byte & 0x80) == 0) break;
+    }
+    return true;
+   }
+  //--------------------------------------------------------------------------------------
+   bool parse_contract_data_from_extra(const std::vector<uint8_t>& extra, tx_extra_contract_data& contract_data) {
+    using namespace epee::serialization;
+
+    // Reset contract_data to default values
+    contract_data = tx_extra_contract_data{};
+
+    size_t offset = 0;
+    while (offset < extra.size()) {
+        varint_t tag;
+        if (!parse_varint_from_blob(extra, offset, tag)) {
+            MERROR("Failed to parse tag from extra data");
+            return false;
+        }
+
+        varint_t size;
+        if (!parse_varint_from_blob(extra, offset, size)) {
+            MERROR("Failed to parse size from extra data");
+            return false;
+        }
+
+        size_t data_start = offset;
+        offset += size;
+
+        if (offset > extra.size()) {
+            MERROR("Extra data size mismatch");
+            return false;
+        }
+
+        std::vector<uint8_t> data(extra.begin() + data_start, extra.begin() + offset);
+
+        if (tag == TX_EXTRA_TAG_NONCE_DEPLOY_CONTRACT) {
+            contract_data.is_contract_call = false;
+            contract_data.bytecode = data;
+            
+            // Parse gas limit and price if included (this would need a specific format)
+            if (data.size() >= 16) { // Assuming 8 bytes for each, adjust if different
+                contract_data.gas_limit = *(uint64_t*)data.data();
+                contract_data.gas_price = *(uint64_t*)(data.data() + 8);
+            }
+        } else if (tag == TX_EXTRA_TAG_NONCE_CALL_CONTRACT) {
+            contract_data.is_contract_call = true;
+            
+            // Monero contract address format (95 characters, Base58 encoded)
+            if (data.size() >= 95) {
+                contract_data.contract_address = std::string(data.begin(), data.begin() + 95);
+            } else {
+                MERROR("Contract address in extra data is too short");
+                return false;
+            }
+            
+            // Remaining data is call data
+            contract_data.call_data = std::vector<uint8_t>(data.begin() + 95, data.end());
+
+            // Assuming gas limit and price are at the start of call data.
+            if (contract_data.call_data.size() >= 16) {
+                contract_data.gas_limit = *(uint64_t*)contract_data.call_data.data();
+                contract_data.gas_price = *(uint64_t*)(contract_data.call_data.data() + 8);
+                contract_data.call_data.erase(contract_data.call_data.begin(), contract_data.call_data.begin() + 16);
+            }
+        } else {
+            // Skip unknown tags
+            continue;
+        }
+    }
+
+    // Check if we've at least got some data for contract deployment or call
+    if (contract_data.bytecode.empty() && !contract_data.is_contract_call) {
+        MERROR("No bytecode found for contract deployment");
+        return false;
+    }
+    if (contract_data.is_contract_call && contract_data.contract_address.empty()) {
+        MERROR("No contract address found for contract call");
+        return false;
+    }
+
+    return true;
+   }
+  //--------------------------------------------------------------------------------------
   bool generate_key_image_helper_precomp(const account_keys& ack, const crypto::public_key& out_key, const crypto::key_derivation& recv_derivation, size_t real_output_index, const subaddress_index& received_index, keypair& in_ephemeral, crypto::key_image& ki, hw::device &hwdev)
   {
     if (hwdev.compute_key_image(ack, out_key, recv_derivation, real_output_index, received_index, in_ephemeral, ki))
