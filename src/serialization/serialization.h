@@ -116,6 +116,9 @@ static bool serialize(Archive& ar, T& v, std::false_type, std::false_type, std::
   static bool serialize(Archive &ar, T &v, std::false_type, std::false_type, std::true_type) {
     return do_serialize(ar, v);
   }
+
+  static void serialize_custom(Archive &ar, T &v, std::true_type) {
+  }
 };
 
 /*! \fn do_serialize(Archive &ar, T &v)
