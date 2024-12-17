@@ -472,8 +472,8 @@ namespace frame_pixs
 
       cryptonote::tx_verification_context tvc{};
       cryptonote::blobdata const tx_blob = cryptonote::tx_to_blob(state_change_tx);
-
-      bool result = core.handle_incoming_tx(tx_blob, tvc, cryptonote::tx_pool_options::new_tx());
+       cryptonote::block current_block;
+      bool result = core.handle_incoming_tx(tx_blob, current_block, tvc, cryptonote::tx_pool_options::new_tx());
       if (!result || tvc.m_verifivation_failed)
       {
         LOG_PRINT_L1("A full state change tx for height: " << vote.block_height <<

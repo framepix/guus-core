@@ -102,7 +102,7 @@ namespace cryptonote
   class Blockchain
   {
   public:
-    bool validate_contract_tx(const cryptonote::transaction& tx);
+    bool validate_contract_tx(const cryptonote::transaction& tx, const cryptonote::block& bl);
     /**
      * @brief container for passing a block and metadata about it on the blockchain
      */

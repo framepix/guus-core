@@ -203,8 +203,9 @@ int check_flush(cryptonote::core &core, std::vector<block_complete_entry> &block
     // process transactions
     for(auto& tx_blob: block_entry.txs)
     {
+      cryptonote::block block;
       tx_verification_context tvc{};
-      core.handle_incoming_tx(tx_blob, tvc, tx_pool_options::from_block());
+      core.handle_incoming_tx(tx_blob, block, tvc, tx_pool_options::from_block());
       if(tvc.m_verifivation_failed)
       {
         MERROR("transaction verification failed, tx_id = "

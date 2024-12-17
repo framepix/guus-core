@@ -332,8 +332,14 @@ namespace cryptonote
     }
 
   //---------------------------------------------------------------
-  bool is_valid_contract_address(const std::string& address) {
+  bool is_valid_contract_address(const std::string& address, int current_version) {
     try {
+
+    // Ensure this logic only applies to version 16 or higher
+    if (current_version < cryptonote::network_version_16) {
+        MINFO("No smart contracts in the chain yet, this function is only supported from version 16 onwards");
+        return false;
+    }
         // Check if address is empty or exceeds maximum length
         if (address.empty() || address.length() != MAX_CONTRACT_ADDRESS_LENGTH + 1) {
             MERROR("Invalid contract address: Address length is incorrect. Expected: " 
@@ -388,8 +394,14 @@ namespace cryptonote
     return true;
    }
   //--------------------------------------------------------------------------------------
-   bool parse_contract_data_from_extra(const std::vector<uint8_t>& extra, tx_extra_contract_data& contract_data) {
+  bool parse_contract_data_from_extra(const std::vector<uint8_t>& extra, tx_extra_contract_data& contract_data, int current_version) {
     using namespace epee::serialization;
+
+    // Ensure this logic only applies to version 16 or higher
+    if (current_version < cryptonote::network_version_16) {
+        MINFO("No smart contracts in the chain yet, this function is only supported from version 16 onwards");
+        return false;
+    }
 
     // Reset contract_data to default values
     contract_data = tx_extra_contract_data{};
@@ -409,14 +421,16 @@ namespace cryptonote
         }
 
         size_t data_start = offset;
-        offset += size;
+        size_t new_offset = offset + size;
 
-        if (offset > extra.size()) {
-            MERROR("Extra data size mismatch");
-            return false;
+        // Check if the new offset exceeds the extra data size
+        if (new_offset > extra.size()) {
+            MWARNING("Extra data size mismatch, ignoring remaining bytes");
+            break; // Stop parsing if we encounter data that might be invalid or corrupt
         }
 
-        std::vector<uint8_t> data(extra.begin() + data_start, extra.begin() + offset);
+        std::vector<uint8_t> data(extra.begin() + data_start, extra.begin() + new_offset);
+        offset = new_offset;
 
         if (tag == TX_EXTRA_TAG_NONCE_DEPLOY_CONTRACT) {
             contract_data.is_contract_call = false;
@@ -430,12 +444,12 @@ namespace cryptonote
         } else if (tag == TX_EXTRA_TAG_NONCE_CALL_CONTRACT) {
             contract_data.is_contract_call = true;
             
-            // Monero contract address format (95 characters, Base58 encoded)
+            // Guus contract address format (95 characters, Base58 encoded)
             if (data.size() >= 95) {
                 contract_data.contract_address = std::string(data.begin(), data.begin() + 95);
             } else {
-                MERROR("Contract address in extra data is too short");
-                return false;
+                MWARNING("Contract address in extra data is too short, ignoring");
+                continue;  // Continue to next tag if address is not valid
             }
             
             // Remaining data is call data
@@ -453,18 +467,21 @@ namespace cryptonote
         }
     }
 
-    // Check if we've at least got some data for contract deployment or call
-    if (contract_data.bytecode.empty() && !contract_data.is_contract_call) {
-        MERROR("No bytecode found for contract deployment");
-        return false;
+    // Since we haven't started creating smart contracts, we might not always expect to find contract data
+    if (!contract_data.is_contract_call && contract_data.bytecode.empty()) {
+        // No contract data found, which is expected for non-smart contract transactions
+        MDEBUG("No contract data found in transaction extra, which is expected for non-smart contract transactions");
+        return true;  // Return true to indicate no error, just no contract data
     }
+
+    // If we've reached here, we have either a contract deployment or call data
     if (contract_data.is_contract_call && contract_data.contract_address.empty()) {
-        MERROR("No contract address found for contract call");
-        return false;
+        MWARNING("No contract address found for contract call, ignoring");
+        contract_data.is_contract_call = false; // Reset to indicate it's not a contract call
     }
 
     return true;
-   }
+    }
   //--------------------------------------------------------------------------------------
   bool generate_key_image_helper_precomp(const account_keys& ack, const crypto::public_key& out_key, const crypto::key_derivation& recv_derivation, size_t real_output_index, const subaddress_index& received_index, keypair& in_ephemeral, crypto::key_image& ki, hw::device &hwdev)
   {

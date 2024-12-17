@@ -233,7 +233,7 @@ namespace cryptonote
     END_SERIALIZE()
    };
 
-   bool parse_contract_data_from_extra(const std::vector<uint8_t>& extra, tx_extra_contract_data& contract_data);
+   bool parse_contract_data_from_extra(const std::vector<uint8_t>& extra, tx_extra_contract_data& contract_data, int current_version);
 
    bool add_extra_field(std::vector<uint8_t>& extra, uint8_t tag, const std::vector<uint8_t>& data);
 

@@ -153,7 +153,7 @@ namespace cryptonote
       *
       * @return true if the transaction was accepted (or already exists), false otherwise
       */
-     bool handle_incoming_tx(const blobdata& tx_blob, tx_verification_context& tvc, const tx_pool_options &opts);
+     bool handle_incoming_tx(const blobdata& tx_blob, const cryptonote::block &block, tx_verification_context& tvc, const tx_pool_options &opts);
 
      /**
       * Returned type of parse_incoming_txs() that provides details about which transactions failed

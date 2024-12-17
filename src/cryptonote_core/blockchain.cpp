@@ -4288,7 +4288,7 @@ bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash&
     // Check if this transaction is a smart contract transaction
     if (is_contract_transaction(tx)) {
         // Validate the smart contract transaction
-        if (!validate_contract_tx(tx)) {
+        if (!validate_contract_tx(tx, bl) && bl.major_version >= network_version_16) {
             MERROR("Invalid smart contract transaction in block " << get_block_height(bl));
             return false;
         }
@@ -4309,7 +4309,7 @@ uint64_t Blockchain::calculate_min_fee(uint64_t gas_limit, uint64_t gas_price) c
     return gas_limit * gas_price;
 }
 //------------------------------------------------------------------
-bool Blockchain::validate_contract_tx(const cryptonote::transaction& tx) {
+bool Blockchain::validate_contract_tx(const cryptonote::transaction& tx, const cryptonote::block& bl) {
     try {
         // Check if the transaction contains contract-related data
         if (tx.extra.empty()) {
@@ -4319,39 +4319,42 @@ bool Blockchain::validate_contract_tx(const cryptonote::transaction& tx) {
 
         // Parse the extra field for contract-specific markers
         cryptonote::tx_extra_contract_data contract_data;
-        if (!cryptonote::parse_contract_data_from_extra(tx.extra, contract_data)) {
+
+         if (bl.major_version >= network_version_16) {
+          const auto hf_version = m_hardfork->get_current_version();
+        if (!cryptonote::parse_contract_data_from_extra(tx.extra, contract_data, hf_version)) {
             MERROR("Failed to parse contract data from transaction extra.");
             return false;
         }
 
         // Check gas limit validity
-        if (contract_data.gas_limit == 0 || contract_data.gas_limit > MAX_GAS_LIMIT) {
+           if (contract_data.gas_limit == 0 || contract_data.gas_limit > MAX_GAS_LIMIT) {
             MERROR("Invalid gas limit in contract transaction.");
             return false;
-        }
+           }
 
-        // Check bytecode validity
-        if (contract_data.bytecode.empty()) {
+          // Check bytecode validity
+          if (contract_data.bytecode.empty()) {
             MERROR("Contract bytecode is empty.");
             return false;
-        }
+           }
 
-        if (contract_data.bytecode.size() > MAX_BYTECODE_SIZE) {
+          if (contract_data.bytecode.size() > MAX_BYTECODE_SIZE) {
             MERROR("Contract bytecode exceeds the maximum allowed size.");
             return false;
-        }
-
+           }
+         }
         // Validate the structure of the bytecode using a virtual machine (optional)
         MoneroVM vm(contract_data.gas_limit);
         if (!vm.validate_bytecode(contract_data.bytecode)) {
             MERROR("Contract bytecode validation failed.");
             return false;
         }
-
+         const uint8_t hf_version = m_hardfork->get_current_version();
         // Additional checks for contract calls
-        if (contract_data.is_contract_call) {
+        if (contract_data.is_contract_call && hf_version >= cryptonote::network_version_16) {
             // Check if the target contract address is valid
-            if (!cryptonote::is_valid_contract_address(contract_data.contract_address)) {
+            if (!cryptonote::is_valid_contract_address(contract_data.contract_address, hf_version)) {
                 MERROR("Invalid target contract address in contract call.");
                 return false;
             }

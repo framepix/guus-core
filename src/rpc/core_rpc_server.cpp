@@ -907,7 +907,8 @@ namespace cryptonote
     }
 
     tx_verification_context tvc{};
-    if(!m_core.handle_incoming_tx(tx_blob, tvc, tx_pool_options::new_tx(req.do_not_relay)) || tvc.m_verifivation_failed)
+    cryptonote::block block;
+    if(!m_core.handle_incoming_tx(tx_blob, block, tvc, tx_pool_options::new_tx(req.do_not_relay)) || tvc.m_verifivation_failed)
     {
       const vote_verification_context &vvc = tvc.m_vote_ctx;
       res.status          = "Failed";
