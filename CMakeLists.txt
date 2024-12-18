@@ -35,6 +35,9 @@ include(CheckLinkerFlag)
 include(CheckLibraryExists)
 include(CheckFunctionExists)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=x86-64")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=x86-64")
+
 if (IOS)
     INCLUDE(CmakeLists_IOS.txt)
 endif()
@@ -42,8 +45,11 @@ endif()
 cmake_minimum_required(VERSION 3.7)
 message(STATUS "CMake version ${CMAKE_VERSION}")
 
+set(HUNTER_ENABLED OFF)
 
 project(guus)
+
+find_package(intx REQUIRED)
 
 function (add_c_flag_if_supported flag var)
   string(REPLACE "-" "_" supported ${flag}_c)
@@ -792,6 +798,9 @@ if(NOT Boost_FOUND)
 elseif(Boost_FOUND)
   message(STATUS "Found Boost Version: ${Boost_VERSION_STRING}")
 
+  set(HUNTER_PACKAGE_VERSION_Boost "1.64.0")
+  set(HUNTER_BOOST_COMPONENTS filesystem thread chrono date_time program_options serialization locale)
+  hunter_add_package(Boost)
   set(BOOST_COMPONENTS filesystem thread date_time chrono serialization program_options locale)
 
   # Boost System is header-only since 1.69

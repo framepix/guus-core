@@ -16,3 +16,9 @@
 [submodule "external/evmone"]
 	path = external/evmone
 	url = https://github.com/qtumproject/qtum-evmone
+[submodule "external/intx"]
+	path = external/intx
+	url = https://github.com/chfast/intx.git
+[submodule "external/ethash"]
+	path = external/ethash
+	url = https://github.com/chfast/ethash.git

@@ -6,7 +6,7 @@ $(package)_sha256_hash=b3732e471a9bb7950f090fd0457ebd2536a9ba0891b7f3785919c654f
 $(package)_cxxflags=-std=c++11
 
 define $(package)_set_vars
-  $(package)_config_opts=--disable-shared --prefix=$(build_prefix)
+  $(package)_config_opts=--disable-shared --prefix=$(build_prefix) --without-sched_yield
   $(package)_config_opts_linux=--with-pic
 endef
 

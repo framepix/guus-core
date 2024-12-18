@@ -56,6 +56,8 @@ target_link_libraries(cryptonote_core
     Boost::program_options
     Boost::chrono
     extra
+    ethash
+    intx
     evmone)
 
 option(WITH_SYSTEMD "Attempts to link against and enable systemd daemon notification support" ON)
