@@ -42,6 +42,13 @@ endif()
 cmake_minimum_required(VERSION 3.7)
 message(STATUS "CMake version ${CMAKE_VERSION}")
 
+include(external/evmone/cmake/cable/HunterGate.cmake)
+HunterGate(
+    URL "https://github.com/cpp-pm/hunter/archive/v0.25.5.tar.gz"
+    SHA1 "a20151e4c0740ee7d0f9994476856d813cdead29"
+)
+
+
 project(guus)
 
 function (add_c_flag_if_supported flag var)
@@ -215,7 +222,7 @@ if(NOT MANUAL_SUBMODULES)
     check_submodule(external/rapidjson)
     check_submodule(external/trezor-common)
     check_submodule(external/randomx)
-    check_submodule(external/evmone)
+    #check_submodule(external/evmone)
     check_submodule(external/loki-mq mapbox-variant cppzmq)
   endif()
 endif()
