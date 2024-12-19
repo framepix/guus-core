@@ -287,7 +287,7 @@ endif()
 # elseif(CMAKE_SYSTEM_NAME MATCHES ".*BSDI.*")
 #   set(BSDI TRUE)
 
-include_directories(external/rapidjson/include src contrib/epee/include external external/randomx)
+include_directories(external/rapidjson/include src contrib/epee/include external external/randomx external/ethash external/ethash/include external/evmone)
 
 if(APPLE)
   include_directories(SYSTEM /usr/include/malloc)

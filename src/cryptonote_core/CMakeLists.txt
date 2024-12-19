@@ -55,7 +55,10 @@ target_link_libraries(cryptonote_core
   PRIVATE
     Boost::program_options
     Boost::chrono
-    extra)
+    extra
+    intx
+    ethash
+    evmone)
 
 option(WITH_SYSTEMD "Attempts to link against and enable systemd daemon notification support" ON)
 if (WITH_SYSTEMD)

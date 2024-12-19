@@ -13,3 +13,12 @@
 [submodule "external/randomx"]
 	path = external/randomx
 	url = https://github.com/framepix/randomx
+[submodule "external/evmone"]
+	path = external/evmone
+	url = https://github.com/framepix/evmone
+[submodule "external/intx"]
+	path = external/intx
+	url = https://github.com/framepix/intx
+[submodule "external/ethash"]
+	path = external/ethash
+	url = https://github.com/framepix/ethash
