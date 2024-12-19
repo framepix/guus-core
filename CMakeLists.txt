@@ -42,7 +42,8 @@ endif()
 cmake_minimum_required(VERSION 3.7)
 message(STATUS "CMake version ${CMAKE_VERSION}")
 
-project(loki)
+set(HUNTER_ENABLED OFF)
+project(guus)
 
 function (add_c_flag_if_supported flag var)
   string(REPLACE "-" "_" supported ${flag}_c)
