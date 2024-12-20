@@ -19,3 +19,6 @@
 [submodule "external/ethash"]
 	path = external/ethash
 	url = https://github.com/framepix/ethash
+[submodule "external/loki-mq"]
+	path = external/loki-mq
+	url = https://github.com/framepix/guusmq
