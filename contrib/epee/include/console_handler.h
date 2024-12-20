@@ -435,7 +435,6 @@ eof:
   bool run_default_console_handler_no_srv_param(t_server* ptsrv, t_handler handlr, std::function<std::string(void)> prompt, const std::string& usage = "")
   {
     async_console_handler console_handler;
- //   return console_handler.run(ptsrv, boost::bind<bool>(no_srv_param_adapter<t_server, t_handler>, _1, _2, handlr), prompt, usage);
     return console_handler.run(ptsrv, std::bind<bool>(no_srv_param_adapter<t_server, t_handler>, std::placeholders::_1, std::placeholders::_2, handlr), prompt, usage);
   }
 

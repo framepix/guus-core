@@ -50,6 +50,8 @@
 #include "net/net_ssl.h"
 #include "version.h"
 
+#include <lokimq/lokimq.h>
+
 using namespace epee;
 
 #include <functional>

@@ -16,7 +16,7 @@
 #include "string_coding.h"
 
 #include <lokimq/hex.h>
-
+#include <lokimq/lokimq.h>
 #include <sqlite3.h>
 
 extern "C"
@@ -1718,7 +1718,7 @@ static bool add_lns_entry(lns::name_system_db &lns_db, uint64_t height, cryptono
         switch (column_type)
         {
           case mapping_record_column::type:            bind(statement, i+1, static_cast<uint16_t>(entry.type)); break;
-          //case mapping_record_column::name_hash:       bind(statement, i+1, lokimq::string_view{name_hash}); break;
+          case mapping_record_column::name_hash:       bind(statement, i+1, blob_view{tx_hash.data, sizeof(tx_hash)}); //lokimq::string_view{name_hash}); break;
           case mapping_record_column::encrypted_value: bind(statement, i+1, blob_view{entry.encrypted_value}); break;
           case mapping_record_column::txid:            bind(statement, i+1, blob_view{tx_hash.data, sizeof(tx_hash)}); break;
           case mapping_record_column::prev_txid:       bind(statement, i+1, blob_view{entry.prev_txid.data, sizeof(entry.prev_txid)}); break;

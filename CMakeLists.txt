@@ -39,6 +39,13 @@ include(CheckLinkerFlag)
 include(CheckLibraryExists)
 include(CheckFunctionExists)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+add_compile_options(-std=c++11)
+add_compile_options(-std=c++17)
+
 if (IOS)
     INCLUDE(CmakeLists_IOS.txt)
 endif()
@@ -59,7 +66,7 @@ message(STATUS "CMake version ${CMAKE_VERSION}")
 project(guus
     VERSION 13.1.1
     LANGUAGES CXX C)
-set(GUUS_RELEASE_CODENAME "Cold Water")
+set(GUUS_RELEASE_CODENAME "Victory Reset")
 
 add_compile_options(-fassociative-math)
 # String value to append to the full version string; this is intended to easily identify whether a
@@ -74,10 +81,10 @@ if(POLICY CMP0079)
   cmake_policy(SET CMP0079 NEW)
 endif()
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-#set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
@@ -340,7 +347,7 @@ endif()
 # elseif(CMAKE_SYSTEM_NAME MATCHES ".*BSDI.*")
 #   set(BSDI TRUE)
 
-include_directories(external/rapidjson/include src contrib/epee/include external external/ethash external/ethash/include external/intx external/evmone)
+include_directories(external/rapidjson/include src contrib/epee/include external external/ethash external/intx external/evmone external/ethash/include)
 
 if(APPLE)
   include_directories(SYSTEM /usr/include/malloc)
