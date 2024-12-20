@@ -250,7 +250,7 @@ namespace tools
   std::string get_human_readable_bytes(uint64_t bytes);
 
 #ifdef __cpp_fold_expressions
-  template <typename... T> constexpr size_t constexpr_sum(Ts... ns) { return (0 + ... + size_t{ns}); }
+  template <typename... T> constexpr size_t constexpr_sum(T... ns) { return (0 + ... + size_t{ns}); }
 #else
   constexpr size_t constexpr_sum() { return 0; }
   template <typename T, typename... Tmore>
@@ -302,12 +302,17 @@ namespace tools
   //
   // The 1-byte alignment is here to protect you: if you have a larger alignment that usually means
   // you have a contained type with a larger alignment, which is probably an integer.
-  template <typename... T, size_t N = constexpr_sum(sizeof(T)...)>
-  std::array<char, N> memcpy_le(const T &...t) {
-    std::array<char, N> r;
-    detail::memcpy_le_impl(r.data(), t...);
-    return r;
-  }
+  template <typename... T>
+size_t constexpr_sum() {
+  return (... + sizeof(T));  // C++17 fold expression for summing sizes
+}
+
+template <typename... T, size_t N = constexpr_sum<T...>()>
+std::array<char, N> memcpy_le(const T&... t) {
+  std::array<char, N> r;
+  detail::memcpy_le_impl(r.data(), t...);
+  return r;
+}
 
   // Returns the `_count` element of a scoped enum, cast to the enum's underlying type
   template <typename Enum>

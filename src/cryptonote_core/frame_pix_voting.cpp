@@ -42,6 +42,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <array>
 
 #include <boost/endian/conversion.hpp>
 
@@ -50,20 +51,34 @@
 
 namespace frame_pixs
 {
-  static crypto::hash make_state_change_vote_hash(uint64_t block_height, uint32_t frame_pix_index, new_state state)
-  {
+
+static crypto::hash make_state_change_vote_hash(uint64_t block_height, uint32_t frame_pix_index, new_state state)
+{
     uint16_t state_int = static_cast<uint16_t>(state);
 
-    auto buf = tools::memcpy_le(block_height, frame_pix_index, state_int);
+    // Assuming tools::memcpy_le doesn't exist or isn't the right tool, we'll use std::array and memcpy instead
+    std::array<char, sizeof(block_height) + sizeof(frame_pix_index) + sizeof(state_int)> buf;
+    size_t offset = 0;
 
-    auto size = buf.size();
+    // Copy block_height into buffer
+    std::memcpy(buf.data() + offset, &block_height, sizeof(block_height));
+    offset += sizeof(block_height);
+
+    // Copy frame_pix_index into buffer
+    std::memcpy(buf.data() + offset, &frame_pix_index, sizeof(frame_pix_index));
+    offset += sizeof(frame_pix_index);
+
+    // Copy state_int into buffer
+    std::memcpy(buf.data() + offset, &state_int, sizeof(state_int));
+
+    size_t size = buf.size();
     if (state == new_state::deregister)
         size -= sizeof(state_int); // Don't include state value for deregs (to be backwards compatible with pre-v12 dereg votes)
 
     crypto::hash result;
     crypto::cn_fast_hash(buf.data(), size, result);
     return result;
-  }
+}
 
   crypto::signature make_signature_from_vote(quorum_vote_t const &vote, const frame_pix_keys &keys)
   {

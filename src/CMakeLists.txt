@@ -45,7 +45,7 @@ function (enable_stack_trace target)
 endfunction()
 
 set_property(GLOBAL PROPERTY sispop_executable_targets "")
-function (guss_add_executable target binary)
+function (guus_add_executable target binary)
   add_executable("${target}" ${ARGN})
   target_link_libraries("${target}" PRIVATE extra)
   enable_stack_trace("${target}")

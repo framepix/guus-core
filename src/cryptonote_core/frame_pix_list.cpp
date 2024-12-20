@@ -1891,7 +1891,7 @@ namespace frame_pixs
     return true;
   }
 
-  static crypto::hash hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, uint8_t hf_version)
+/*  static crypto::hash hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, uint8_t hf_version)
   {
     auto buf = tools::memcpy_le(proof.pubkey.data, proof.timestamp, proof.pubkey_ed25519.data);
     size_t buf_size = buf.size();
@@ -1899,7 +1899,30 @@ namespace frame_pixs
     crypto::hash result;
     crypto::cn_fast_hash(buf.data(), buf_size, result);
     return result;
-  }
+  }*/
+static crypto::hash hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, uint8_t hf_version)
+{
+  // Assuming proof.pubkey and proof.pubkey_ed25519 are of type std::array or similar with known sizes
+  std::array<char, sizeof(proof.pubkey.data) + sizeof(proof.timestamp) + sizeof(proof.pubkey_ed25519.data)> buf;
+  size_t offset = 0;
+
+  // Copy pubkey data
+  std::memcpy(buf.data() + offset, proof.pubkey.data, sizeof(proof.pubkey.data));
+  offset += sizeof(proof.pubkey.data);
+
+  // Copy timestamp
+  std::memcpy(buf.data() + offset, &proof.timestamp, sizeof(proof.timestamp));
+  offset += sizeof(proof.timestamp);
+
+  // Copy pubkey_ed25519 data
+  std::memcpy(buf.data() + offset, proof.pubkey_ed25519.data, sizeof(proof.pubkey_ed25519.data));
+
+  size_t buf_size = buf.size();
+
+  crypto::hash result;
+  crypto::cn_fast_hash(buf.data(), buf_size, result);
+  return result;
+}
 
   cryptonote::NOTIFY_UPTIME_PROOF::request frame_pix_list::generate_uptime_proof(
       const frame_pix_keys &keys) const

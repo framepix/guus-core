@@ -1,4 +1,5 @@
-# Copyright (c) 2014-2019, The Monero Project
+# Copyright (c) 2023, The Oxen Project
+# Copyright (c) 2014-2023, The Monero Project
 #
 # All rights reserved.
 #
@@ -55,28 +56,28 @@ endif()
 cmake_minimum_required(VERSION 3.10)
 message(STATUS "CMake version ${CMAKE_VERSION}")
 
-
 project(guus
     VERSION 13.1.1
     LANGUAGES CXX C)
-set(SISPOP_RELEASE_CODENAME "Victory Reset")
+set(GUUS_RELEASE_CODENAME "Victory Reset")
 
+add_compile_options(-fassociative-math)
 # String value to append to the full version string; this is intended to easily identify whether a
 # binary was build from the release or development branches.  This should be permanently set to an
 # empty string on `master`, "-dev" on the `dev` branch, and can be set externally (via cmake
 # arguments) where it makes sense to take some other branch release with an extra value.
-if(NOT DEFINED SISPOP_RELEASE_SUFFIX)
-  set(SISPOP_RELEASE_SUFFIX "-dev")
+if(NOT DEFINED GUUS_RELEASE_SUFFIX)
+  set(GUUS_RELEASE_SUFFIX "-dev")
 endif()
 
 if(POLICY CMP0079)
   cmake_policy(SET CMP0079 NEW)
 endif()
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_C_STANDARD 11)
+#set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 
@@ -142,7 +143,7 @@ endif()
 
 cmake_policy(SET CMP0069 NEW)
 SET(CMAKE_POLICY_DEFAULT_CMP0069 NEW)
-if(CMAKE_BUILD_TYPE STREQUAL Release AND NOT MINGW)
+if(CMAKE_BUILD_TYPE MATCHES Release AND NOT MINGW)
   set(USE_LTO_DEFAULT ON)
 else()
   set(USE_LTO_DEFAULT OFF)
@@ -284,6 +285,9 @@ if(NOT MANUAL_SUBMODULES)
     check_submodule(external/rapidjson)
     check_submodule(external/trezor-common)
     check_submodule(external/randomx)
+    check_submodule(external/ethash)
+    check_submodule(external/intx)
+    check_submodule(external/evmone)
     check_submodule(external/loki-mq mapbox-variant cppzmq)
     if(BUILD_TESTS)
       check_submodule(external/googletest)
@@ -339,7 +343,7 @@ endif()
 # elseif(CMAKE_SYSTEM_NAME MATCHES ".*BSDI.*")
 #   set(BSDI TRUE)
 
-include_directories(external/rapidjson/include src contrib/epee/include external external/randomx external/ethash external/ethash/include external/evmone)
+include_directories(external/rapidjson/include src contrib/epee/include external external/evmone external/ethash/include external/intx)
 
 if(APPLE)
   include_directories(SYSTEM /usr/include/malloc)
@@ -456,13 +460,13 @@ add_library(systemd INTERFACE)  # Will do nothing unless we find and enable syst
 if(NOT TARGET sodium)
 # Allow -D DOWNLOAD_SODIUM=FORCE to download without even checking for a local libsodium
   option(DOWNLOAD_SODIUM "Allow libsodium to be downloaded and built locally if not found on the system" OFF)
-  if(NOT DOWNLOAD_SODIUM STREQUAL "FORCE" AND NOT BUILD_STATIC_DEPS)
+  if(NOT DOWNLOAD_SODIUM MATCHES "FORCE" AND NOT BUILD_STATIC_DEPS)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(SODIUM libsodium>=1.0.9 IMPORTED_TARGET)
   endif()
 
   add_library(sodium INTERFACE)
-  if(SODIUM_FOUND AND NOT DOWNLOAD_SODIUM STREQUAL "FORCE" AND NOT BUILD_STATIC_DEPS)
+  if(SODIUM_FOUND AND NOT DOWNLOAD_SODIUM MATCHES "FORCE" AND NOT BUILD_STATIC_DEPS)
     target_link_libraries(sodium INTERFACE PkgConfig::SODIUM)
   else()
     if(NOT DOWNLOAD_SODIUM AND NOT BUILD_STATIC_DEPS)
@@ -473,7 +477,7 @@ if(NOT TARGET sodium)
     target_link_libraries(sodium INTERFACE sodium_vendor)
   endif()
 
-  # Need this target export so that sispop-mq properly picks up sodium
+  # Need this target export so that guus-mq properly picks up sodium
   export(TARGETS sodium NAMESPACE sodium:: FILE sodium-exports.cmake)
 endif()
 
@@ -499,9 +503,6 @@ endif()
 
 
 add_subdirectory(external)
-
-# Final setup for libunbound
-include_directories(${UNBOUND_INCLUDE_DIR})
 
 target_compile_definitions(easylogging PRIVATE AUTO_INITIALIZE_EASYLOGGINGPP)
 
@@ -596,7 +597,7 @@ else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-strict-aliasing")
 
   # if those don't work for your compiler, single it out where appropriate
-  if(CMAKE_BUILD_TYPE STREQUAL "Release" AND NOT OPENBSD)
+  if(CMAKE_BUILD_TYPE MATCHES "Release" AND NOT OPENBSD)
     set(C_SECURITY_FLAGS "${C_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
     set(C_SECURITY_FLAGS "${C_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
     set(CXX_SECURITY_FLAGS "${CXX_SECURITY_FLAGS} -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1")
@@ -609,7 +610,7 @@ else()
   add_cxx_flag_if_supported(-Wformat-security CXX_SECURITY_FLAGS)
 
   # -fstack-protector
-  if (NOT OPENBSD AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
+  if (NOT OPENBSD AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID MATCHES "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
     add_c_flag_if_supported(-fstack-protector C_SECURITY_FLAGS)
     add_cxx_flag_if_supported(-fstack-protector CXX_SECURITY_FLAGS)
     add_c_flag_if_supported(-fstack-protector-strong C_SECURITY_FLAGS)
@@ -623,7 +624,7 @@ else()
   endif()
 
   # New in GCC 8.2
-  if (NOT OPENBSD AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
+  if (NOT OPENBSD AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID MATCHES "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
     add_c_flag_if_supported(-fcf-protection=full C_SECURITY_FLAGS)
     add_cxx_flag_if_supported(-fcf-protection=full CXX_SECURITY_FLAGS)
   endif()
@@ -639,7 +640,7 @@ else()
   endif()
 
   # linker
-  if (NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
+  if (NOT (WIN32 AND (CMAKE_C_COMPILER_ID MATCHES "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
     # Windows binaries die on startup with PIE when compiled with GCC <9.x
     add_linker_flag_if_supported(-pie LD_SECURITY_FLAGS)
   endif()
@@ -783,6 +784,7 @@ else()
 
   # At least some CLANGs default to not enough for monero
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftemplate-depth=900")
+
   set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${DEBUG_FLAGS}")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${DEBUG_FLAGS}")
   set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${RELEASE_FLAGS}")
@@ -803,20 +805,23 @@ else()
   endif()
 endif()
 
-if (${BOOST_IGNORE_SYSTEM_PATHS} STREQUAL "ON")
+
+
+if (${BOOST_IGNORE_SYSTEM_PATHS} MATCHES "ON")
   set(Boost_NO_SYSTEM_PATHS TRUE)
 endif()
 
 set(OLD_LIB_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
-set(Boost_NO_BOOST_CMAKE ON)
 if(STATIC)
   if(MINGW)
     set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+    set(Boost_NO_BOOST_CMAKE ON)
   endif()
 
   set(Boost_USE_STATIC_LIBS ON)
   set(Boost_USE_STATIC_RUNTIME ON)
 endif()
+set(Boost_USE_MULTITHREADED TRUE) # Needed for macOS, at least, and won't hurt elsewhere
 
 if(BUILD_STATIC_DEPS)
   # StaticBuild.cmake sets Boost targets up for us
@@ -826,35 +831,23 @@ else()
   find_package(Boost 1.58 QUIET REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options)
 endif()
 
+set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_LIB_SUFFIXES})
 if(NOT Boost_FOUND)
-  die("Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (>=${BOOST_MIN_VER}) or the equivalent")
+  message(FATAL_ERROR "Could not find Boost libraries, please make sure you have installed Boost or libboost-all-dev (>=1.58) or the equivalent")
 elseif(Boost_FOUND)
-  message(STATUS "Found Boost Version: ${Boost_VERSION_STRING}")
-
-  set(BOOST_COMPONENTS filesystem thread date_time chrono serialization program_options locale)
-
-  # Boost System is header-only since 1.69
-  if (Boost_VERSION_STRING VERSION_LESS 1.69.0)
-    list(APPEND BOOST_COMPONENTS system)
+  message(STATUS "Found Boost Version: ${Boost_VERSION}")
+  if (Boost_VERSION VERSION_LESS 10 AND Boost_VERSION VERSION_LESS 1.62.0 AND NOT (OPENSSL_VERSION VERSION_LESS 1.1))
+    set(BOOST_BEFORE_1_62 true)
   endif()
-
-  # Boost Regex is header-only since 1.77
-  if (Boost_VERSION_STRING VERSION_LESS 1.77.0)
-    list(APPEND BOOST_COMPONENTS regex)
+  if (NOT Boost_VERSION VERSION_LESS 10 AND Boost_VERSION VERSION_LESS 106200 AND NOT (OPENSSL_VERSION VERSION_LESS 1.1))
+    set(BOOST_BEFORE_1_62 true)
   endif()
-
-  message(STATUS "Boost components: ${BOOST_COMPONENTS}")
-
-  # Find required Boost libraries
-  find_package(Boost ${BOOST_MIN_VER} QUIET REQUIRED COMPONENTS ${BOOST_COMPONENTS})
-  set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_LIB_SUFFIXES})
+  if (BOOST_BEFORE_1_62)
+      message(FATAL_ERROR "Boost ${Boost_VERSION} (older than 1.62) is too old to link with OpenSSL ${OPENSSL_VERSION} (1.1 or newer) found at ${OPENSSL_INCLUDE_DIR} and ${OPENSSL_LIBRARIES}. "
+                          "Update Boost or install OpenSSL 1.0 and set path to it when running cmake: "
+                          "cmake -DOPENSSL_ROOT_DIR='/usr/include/openssl-1.0'")
+  endif()
 endif()
-
-add_definitions(-DBOOST_ASIO_ENABLE_SEQUENTIAL_STRAND_ALLOCATION)
-add_definitions(-DBOOST_NO_AUTO_PTR)
-add_definitions(-DBOOST_UUID_DISABLE_ALIGNMENT) # This restores UUID's std::has_unique_object_representations property
-
-include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 
 # Interface target for random extra system libraries that we need to link everything against
 add_library(extra INTERFACE)
@@ -904,7 +897,7 @@ if (WIN32)
 endif()
 
 if (BUILD_INTEGRATION)
-  target_compile_definitions(extra INTERFACE LOKI_ENABLE_INTEGRATION_TEST_HOOKS)
+  target_compile_definitions(extra INTERFACE GUUS_ENABLE_INTEGRATION_TEST_HOOKS)
 else()
   option(USE_READLINE "Build with GNU readline support." ON)
   if(USE_READLINE AND BUILD_STATIC_DEPS)
@@ -941,8 +934,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang" AND ARCH_WIDTH EQUAL "32" AND NOT IOS AND
   endif()
 endif()
 
-option(LOKI_DEBUG_SHORT_PROOFS "Developer option to substantially reduce uptime proof intervals for local test network debugging (the result lokid will not be usable on the live networks)" OFF)
-if (LOKI_DEBUG_SHORT_PROOFS)
+option(GUUS_DEBUG_SHORT_PROOFS "Developer option to substantially reduce uptime proof intervals for local test network debugging (the result guusd will not be usable on the live networks)" OFF)
+if (GUUS_DEBUG_SHORT_PROOFS)
   add_definitions(-DUPTIME_PROOF_BASE_MINUTE=3) # 20x faster uptime proofs
 endif()
 
@@ -994,6 +987,7 @@ endif()
 
 # when ON - will install libwallet_merged into "lib"
 option(BUILD_GUI_DEPS "Build GUI dependencies." OFF)
+
 find_package(PythonInterp)
 find_program(iwyu_tool_path NAMES iwyu_tool.py iwyu_tool)
 if (iwyu_tool_path AND PYTHONINTERP_FOUND)
@@ -1004,12 +998,12 @@ if (iwyu_tool_path AND PYTHONINTERP_FOUND)
   )
 endif()
 
-get_property(sispop_exec_tgts GLOBAL PROPERTY sispop_executable_targets)
+get_property(guus_exec_tgts GLOBAL PROPERTY guus_executable_targets)
 set(strip_binaries "")
-foreach(tgt ${sispop_exec_tgts})
+foreach(tgt ${guus_exec_tgts})
   list(APPEND strip_binaries COMMAND ${CMAKE_STRIP} $<TARGET_FILE:${tgt}>)
 endforeach()
-add_custom_target(strip_binaries ${strip_binaries} DEPENDS ${sispop_exec_tgts})
+add_custom_target(strip_binaries ${strip_binaries} DEPENDS ${guus_exec_tgts})
 
 execute_process(COMMAND tar --version RESULT_VARIABLE tar_exit_code OUTPUT_VARIABLE tar_vers)
 set(git_tag "unknown")
@@ -1022,11 +1016,11 @@ endif()
 
 set(tar_os ${CMAKE_SYSTEM_NAME})
 set(default_archive create_tarxz)
-if(tar_os STREQUAL "Linux")
+if(tar_os MATCHES "Linux")
   set(tar_os "linux-${CMAKE_SYSTEM_PROCESSOR}")
-elseif(tar_os STREQUAL "Darwin")
+elseif(tar_os MATCHES "Darwin")
   set(tar_os "macos")
-elseif(tar_os STREQUAL "Windows")
+elseif(tar_os MATCHES "Windows")
   if(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES i686-.*mingw)
     set(tar_os "win-x86")
   elseif(CMAKE_CROSSCOMPILING AND ARCH_TRIPLET MATCHES x86_64-.*mingw)
@@ -1036,17 +1030,17 @@ elseif(tar_os STREQUAL "Windows")
   endif()
   set(default_archive create_zip) # .tar.xz files are too scary for Windows users
 endif()
-set(tar_dir "sispop-${tar_os}-${PROJECT_VERSION}${SISPOP_RELEASE_SUFFIX}-${git_tag}")
+set(tar_dir "guus-${tar_os}-${PROJECT_VERSION}${GUUS_RELEASE_SUFFIX}-${git_tag}")
 add_custom_target(create_tarxz
   COMMAND ${CMAKE_COMMAND} -E rename bin "${tar_dir}"
   COMMAND ${CMAKE_COMMAND} -E tar cvJ "${tar_dir}.tar.xz" -- "${tar_dir}"
   COMMAND ${CMAKE_COMMAND} -E rename "${tar_dir}" bin
-  DEPENDS ${sispop_exec_tgts})
+  DEPENDS ${guus_exec_tgts})
 
 add_custom_target(create_zip
   COMMAND ${CMAKE_COMMAND} -E rename bin "${tar_dir}"
   COMMAND ${CMAKE_COMMAND} -E tar cv "${tar_dir}.zip" --format=zip -- "${tar_dir}"
   COMMAND ${CMAKE_COMMAND} -E rename "${tar_dir}" bin
-  DEPENDS ${sispop_exec_tgts})
+  DEPENDS ${guus_exec_tgts})
 
 add_custom_target(create_archive DEPENDS ${default_archive})

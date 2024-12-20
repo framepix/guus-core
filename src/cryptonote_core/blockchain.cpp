@@ -30,8 +30,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <boost/filesystem.hpp>
-#include <boost/range/adaptor/reversed.hpp>
 
 #include "common/rules.h"
 #include "include_base_utils.h"
@@ -60,6 +58,9 @@
 #include "common/varint.h"
 #include "common/pruning.h"
 #include "common/lock.h"
+
+#include <boost/filesystem.hpp>
+#include <boost/range/adaptor/reversed.hpp>
 
 #ifdef ENABLE_SYSTEMD
 extern "C" {

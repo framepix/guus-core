@@ -55,6 +55,7 @@ public:
 
     class tx_hash_visitor : public boost::static_visitor<crypto::hash> {
     public:
+        tx_hash_visitor() = default;
         crypto::hash operator()(const crypto::hash &h) const { return h; }
         crypto::hash operator()(const transaction &tx) const;
     };
