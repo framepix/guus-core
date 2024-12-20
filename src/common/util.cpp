@@ -673,7 +673,7 @@ std::string get_nix_version_display_string()
     return std::error_code(code, std::system_category());
   }
 
-  static bool unbound_built_with_threads()
+ /* static bool unbound_built_with_threads()
   {
     ub_ctx *ctx = ub_ctx_create();
     if (!ctx) return false; // cheat a bit, should not happen unless OOM
@@ -686,16 +686,16 @@ std::string get_nix_version_display_string()
     ub_ctx_delete(ctx);
     MINFO("libunbound was built " << (with_threads ? "with" : "without") << " threads");
     return with_threads;
-  }
+  }*/
 
   static bool unbound_built_with_threads()
   {
     ub_ctx *ctx = ub_ctx_create();
     if (!ctx) return false; // cheat a bit, should not happen unless OOM
-    char *sispop = strdup("sispop"), *unbound = strdup("unbound");
-    ub_ctx_zone_add(ctx, sispop, unbound); // this calls ub_ctx_finalize first, then errors out with UB_SYNTAX
+    char *guus = strdup("guus"), *unbound = strdup("unbound");
+    ub_ctx_zone_add(ctx, guus, unbound); // this calls ub_ctx_finalize first, then errors out with UB_SYNTAX
     free(unbound);
-    free(sispop);
+    free(guus);
     // if no threads, bails out early with UB_NOERROR, otherwise fails with UB_AFTERFINAL id already finalized
     bool with_threads = ub_ctx_async(ctx, 1) != 0; // UB_AFTERFINAL is not defined in public headers, check any error
     ub_ctx_delete(ctx);

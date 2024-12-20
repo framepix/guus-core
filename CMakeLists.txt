@@ -59,7 +59,7 @@ message(STATUS "CMake version ${CMAKE_VERSION}")
 project(guus
     VERSION 13.1.1
     LANGUAGES CXX C)
-set(GUUS_RELEASE_CODENAME "Victory Reset")
+set(GUUS_RELEASE_CODENAME "Cold Water")
 
 add_compile_options(-fassociative-math)
 # String value to append to the full version string; this is intended to easily identify whether a
@@ -285,9 +285,6 @@ if(NOT MANUAL_SUBMODULES)
     check_submodule(external/rapidjson)
     check_submodule(external/trezor-common)
     check_submodule(external/randomx)
-    check_submodule(external/ethash)
-    check_submodule(external/intx)
-    check_submodule(external/evmone)
     check_submodule(external/loki-mq mapbox-variant cppzmq)
     if(BUILD_TESTS)
       check_submodule(external/googletest)
@@ -343,7 +340,7 @@ endif()
 # elseif(CMAKE_SYSTEM_NAME MATCHES ".*BSDI.*")
 #   set(BSDI TRUE)
 
-include_directories(external/rapidjson/include src contrib/epee/include external external/evmone external/ethash/include external/intx)
+include_directories(external/rapidjson/include src contrib/epee/include external external/ethash external/ethash/include external/intx external/evmone)
 
 if(APPLE)
   include_directories(SYSTEM /usr/include/malloc)

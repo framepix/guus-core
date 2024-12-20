@@ -19,18 +19,18 @@ set -o xtrace  # Don't start tracing until *after* we write the ssh key
 
 chmod 600 ssh_key
 
-upload_to="builds.sispopnet.dev/${DRONE_REPO// /_}/${DRONE_BRANCH// /_}"
+upload_to="builds.guusnet.dev/${DRONE_REPO// /_}/${DRONE_BRANCH// /_}"
 
 filename=
-for f in sispop-*.tar.xz sispop-*.zip; do
-    if [[ $f != sispop-\** ]]; then
+for f in guus-*.tar.xz guus-*.zip; do
+    if [[ $f != guus-\** ]]; then
         filename=$f
         break
     fi
 done
 
 if [ -z "$filename" ]; then
-    echo "Did not find expected sispop-*.tar.xz or .zip!"
+    echo "Did not find expected guus-*.tar.xz or .zip!"
     ls -l
     exit 1
 fi
@@ -47,7 +47,7 @@ for p in "${upload_dirs[@]}"; do
 -mkdir $dir_tmp"
 done
 
-sftp -i ssh_key -b - -o StrictHostKeyChecking=off drone@builds.sispopnet.dev <<SFTP
+sftp -i ssh_key -b - -o StrictHostKeyChecking=off drone@builds.guusnet.dev <<SFTP
 $mkdirs
 put $filename $upload_to
 SFTP

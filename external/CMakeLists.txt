@@ -88,23 +88,9 @@ else()
   endif()
 endif()
 
-find_package(Unbound)
-
-if(NOT UNBOUND_INCLUDE_DIR)
-  die("Could not find libunbound")
-else()
-  message(STATUS "Found libunbound include (unbound.h) in ${UNBOUND_INCLUDE_DIR}")
-  if(UNBOUND_LIBRARIES)
-    message(STATUS "Found libunbound library")
-  else()
-    die("Found libunbound includes, but could not find libunbound library. Please make sure you have installed libunbound or libunbound-dev or the equivalent")
-  endif()
-endif()
-
 add_subdirectory(db_drivers)
 add_subdirectory(easylogging++)
 add_subdirectory(randomx EXCLUDE_FROM_ALL)
 add_subdirectory(ethash)
 add_subdirectory(intx)
 add_subdirectory(evmone)
-
