@@ -38,6 +38,11 @@
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include <unordered_map>
+#include <boost/multiprecision/cpp_int.hpp>
+#include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_basic/smart_contract_utils.h"
+#include <evmc/evmc.h>
+#include <vector>
 
 namespace epee
 {
@@ -50,6 +55,7 @@ namespace cryptonote
 {
   struct tx_verification_context;
   struct vote_verification_context;
+    struct tx_source_entry;
   //---------------------------------------------------------------
   void get_transaction_prefix_hash(const transaction_prefix& tx, crypto::hash& h);
   crypto::hash get_transaction_prefix_hash(const transaction_prefix& tx);
@@ -310,4 +316,18 @@ namespace cryptonote
 #define CHECKED_GET_SPECIFIC_VARIANT(variant_var, specific_type, variable_name, fail_return_val) \
   CHECK_AND_ASSERT_MES(variant_var.type() == typeid(specific_type), fail_return_val, "wrong variant type: " << variant_var.type().name() << ", expected " << typeid(specific_type).name()); \
   specific_type& variable_name = boost::get<specific_type>(variant_var);
+
+    // Function declarations for smart contract handling
+    bool parse_and_validate_tx_with_smart_contract(const blobdata_ref& tx_blob, transaction_with_smart_contract& tx);
+    bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
+                                      std::vector<tx_source_entry>& sources,
+                                      const std::vector<tx_destination_entry>& destinations,
+                                      const boost::optional<account_public_address>& change_addr,
+                                      const std::vector<uint8_t>& extra,
+                                      transaction_with_smart_contract& tx,
+                                      const smart_contract_data& contract_data);
+
+    // Utility for executing smart contracts
+    bool execute_smart_contract(const transaction_with_smart_contract& tx, crypto::hash& result_hash);
+
 }

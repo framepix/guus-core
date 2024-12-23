@@ -44,6 +44,10 @@
 #include "cryptonote_basic/verification_context.h"
 #include "cryptonote_core/frame_pix_voting.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "cryptonote_core/cryptonote_tx_utils.h"
+#include <evmc/evmc.hpp>
+#include <evmone/evmone.h>
+#include <evmc/mocked_host.hpp>
 
 using namespace epee;
 
@@ -220,6 +224,25 @@ namespace cryptonote
     CHECK_AND_ASSERT_MES(expand_transaction_1(tx, false), false, "Failed to expand transaction data");
     tx.invalidate_hashes();
     tx.set_blob_size(tx_blob.size());
+
+    // EVM-specific handling
+    if (tx.version >=  txversion::v5_tx_types) // version 5+ supports EVM
+    {
+        std::cout << "Parsing transaction with potential EVM data..." << std::endl;
+
+        // Check if the transaction contains EVM bytecode
+        if (!tx.evm_bytecode.empty())
+        {
+            std::cout << "EVM transaction detected: bytecode size = " << tx.evm_bytecode.size() << " bytes" << std::endl;
+
+            // Validate the bytecode size
+            if (tx.evm_bytecode.size() > 1024 * 1024) // 1 MB limit for now
+            {
+                std::cerr << "Error: EVM bytecode size exceeds the allowed limit!" << std::endl;
+                return false;
+            }
+        }
+    }
     return true;
   }
   //---------------------------------------------------------------
@@ -263,6 +286,80 @@ namespace cryptonote
     get_transaction_prefix_hash(tx, tx_prefix_hash);
     return true;
   }
+  //---------------------------------------------------------------
+  // Implementation of new transaction parsing for smart contracts
+  bool parse_and_validate_tx_with_smart_contract(const blobdata& tx_blob, transaction_with_smart_contract& tx) {
+    // Parse regular transaction
+    if (!parse_and_validate_tx_from_blob(tx_blob, static_cast<transaction&>(tx))) {
+        return false;
+    }
+
+    // Parse additional smart contract data if present
+    // Here you would implement logic to decode and validate smart contract specific data
+    // For simplicity, we're just setting the flag here
+    tx.is_smart_contract = true; // Example: Flagging it as a smart contract transaction
+    return true;
+}
+ //----------------------------------------------------------------
+ // Implementation of smart contract transaction construction
+ // Function to construct a transaction with smart contract data
+bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
+                                      std::vector<cryptonote::tx_source_entry>& sources,
+                                      const std::vector<tx_destination_entry>& destinations,
+                                      const boost::optional<cryptonote::account_public_address>& change_addr,
+                                      const std::vector<uint8_t>& extra,
+                                      transaction_with_smart_contract& tx,
+                                      const smart_contract_data& contract_data) {
+        boost::optional<tx_destination_entry> change_destination;
+    if (change_addr) {
+        // Assuming change amount is 0, adjust as necessary
+        change_destination = tx_destination_entry{0, *change_addr, false};
+    }
+
+    // First, construct the base transaction with the converted change address
+    if (!construct_tx(sender_account_keys, sources, destinations, change_destination, extra, static_cast<transaction&>(tx), 0, {})) {
+        return false;
+    }
+
+    // Attach the smart contract data to the transaction
+    tx.contract_data = contract_data;
+    tx.is_smart_contract = true;
+
+    return true;
+}
+
+  bool execute_smart_contract(const transaction_with_smart_contract& tx, crypto::hash& result_hash) {
+    // Check if the transaction actually contains smart contract data
+    if (!tx.is_smart_contract) {
+        return false;
+    }
+
+    // Initialize EVM VM
+    evmc::VM vm(evmc_create_evmone());
+    evmc_revision rev = EVMC_SHANGHAI; // Hardcoded for now; should be configurable in the future
+    evmc_message msg = {}; // Set up message with appropriate values for execution context
+
+    // Mock host; in a real scenario, this would interact with the blockchain state
+    evmc::MockedHost host;
+
+    // Execute the smart contract bytecode
+    auto result = vm.execute(host, rev, msg,
+                             reinterpret_cast<const uint8_t*>(tx.contract_data.bytecode.data()),
+                             tx.contract_data.bytecode.size());
+
+    if (result.status_code == EVMC_SUCCESS) {
+        // Copy the execution result to the provided hash, ensuring we don't exceed hash size
+        size_t copy_size = std::min(static_cast<size_t>(result.output_size), sizeof(crypto::hash));
+        memcpy(&result_hash, result.output_data, copy_size); // Fixed: Removed .data() since output_data is a pointer
+
+        // Zero out any unused bytes in the hash
+        if (copy_size < sizeof(crypto::hash)) {
+            memset(reinterpret_cast<uint8_t*>(&result_hash) + copy_size, 0, sizeof(crypto::hash) - copy_size);
+        }
+        return true;
+    }
+    return false;
+   }
   //---------------------------------------------------------------
   bool is_v1_tx(const blobdata_ref& tx_blob)
   {

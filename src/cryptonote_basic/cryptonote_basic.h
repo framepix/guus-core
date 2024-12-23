@@ -159,6 +159,7 @@ namespace cryptonote
     v2_ringct,
     v3_per_output_unlock_times,
     v4_tx_types,
+    v5_tx_types,
     _count,
   };
   enum class txtype : uint16_t {
@@ -167,6 +168,7 @@ namespace cryptonote
     key_image_unlock,
     stake,
     guus_name_system,
+    smart_contract,
     _count
   };
 
@@ -254,6 +256,7 @@ namespace cryptonote
     mutable std::atomic<bool> blob_size_valid;
 
   public:
+    std::vector<uint8_t> evm_bytecode;
     std::vector<std::vector<crypto::signature> > signatures; //count signatures  always the same as inputs count
     rct::rctSig rct_signatures;
 

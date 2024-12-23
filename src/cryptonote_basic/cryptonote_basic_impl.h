@@ -33,9 +33,27 @@
 #include "cryptonote_basic.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
-
+#include <evmc/evmc.h>
+#include <evmone/evmone.h>
+#include <memory>
+#include <unordered_map>
+#include <string>
+#include <vector>
 
 namespace cryptonote {
+
+//    struct transaction;
+//    struct transaction_verification_context;
+
+    // Declaration of the function to check if a transaction is an EVM transaction
+    bool is_smart_contract_transaction(const transaction &tx);
+
+    // Declaration of the function to validate EVM transactions
+    bool validate_evm_transaction(const transaction &tx);
+
+    // Declaration of the function to execute EVM bytecode
+    bool execute_smart_contract(const std::string &bytecode, const std::vector<uint8_t> &input_data);
+
   class BlockAddedHook
   {
   public:

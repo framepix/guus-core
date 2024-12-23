@@ -290,6 +290,8 @@ inline bool do_serialize(Archive &ar, bool &v)
     }                                        \
   } while(0);
 
+#define BASE_FIELDS(base) FIELDS(*static_cast<base*>(this))
+
 namespace serialization {
   /*! \namespace detail
    *

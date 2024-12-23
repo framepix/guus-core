@@ -33,18 +33,38 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 list(INSERT CMAKE_MODULE_PATH 0
   "${CMAKE_SOURCE_DIR}/cmake")
+
+cmake_minimum_required(VERSION 3.10)
+message(STATUS "CMake version ${CMAKE_VERSION}")
+
+project(guus
+    VERSION 13.1.1
+    LANGUAGES CXX C)
+set(GUUS_RELEASE_CODENAME "Victory Reset")
+
+# Include modules after project declaration
 include(CheckCCompilerFlag)
 include(CheckCXXCompilerFlag)
 include(CheckLinkerFlag)
 include(CheckLibraryExists)
 include(CheckFunctionExists)
 
+# Check for C++17 support
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD_REQUIRED OFF)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_compile_options(-std=c++11)
-add_compile_options(-std=c++17)
+check_cxx_compiler_flag("-std=c++17" COMPILER_SUPPORTS_CXX17)
+
+if(COMPILER_SUPPORTS_CXX17)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    message(STATUS "Using C++17")
+else()
+    set(CMAKE_CXX_STANDARD 11)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    message(STATUS "Using C++11")
+endif()
 
 if (IOS)
     INCLUDE(CmakeLists_IOS.txt)
@@ -60,14 +80,6 @@ if(CCACHE_PROGRAM)
   endforeach()
 endif()
 
-cmake_minimum_required(VERSION 3.10)
-message(STATUS "CMake version ${CMAKE_VERSION}")
-
-project(guus
-    VERSION 13.1.1
-    LANGUAGES CXX C)
-set(GUUS_RELEASE_CODENAME "Victory Reset")
-
 add_compile_options(-fassociative-math)
 # String value to append to the full version string; this is intended to easily identify whether a
 # binary was build from the release or development branches.  This should be permanently set to an
@@ -81,12 +93,12 @@ if(POLICY CMP0079)
   cmake_policy(SET CMP0079 NEW)
 endif()
 
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS OFF)
+#set(CMAKE_CXX_STANDARD 14)
+#set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CXX_EXTENSIONS OFF)
+#set(CMAKE_C_STANDARD 11)
+#set(CMAKE_C_STANDARD_REQUIRED ON)
+#set(CMAKE_C_EXTENSIONS OFF)
 
 function (add_c_flag_if_supported flag var)
   string(REPLACE "-" "_" supported ${flag}_c)
@@ -347,7 +359,7 @@ endif()
 # elseif(CMAKE_SYSTEM_NAME MATCHES ".*BSDI.*")
 #   set(BSDI TRUE)
 
-include_directories(external/rapidjson/include src contrib/epee/include external external/ethash external/intx external/evmone external/ethash/include)
+include_directories(external/rapidjson/include src contrib/epee/include external external/ethash external/intx external/evmone external/ethash/include external/evmone/evmc/include external/evmone/include external/loki-mq/lokimq)
 
 if(APPLE)
   include_directories(SYSTEM /usr/include/malloc)

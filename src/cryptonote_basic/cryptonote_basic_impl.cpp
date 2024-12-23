@@ -45,6 +45,7 @@ using namespace epee;
 #include "common/dns_utils.h"
 #include "common/guus.h"
 #include <cfenv>
+#include "cryptonote_basic/smart_contract_utils.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "cn"
@@ -355,3 +356,50 @@ bool parse_hash256(const std::string &str_hash, crypto::hash& hash)
     return true;
   }
 }
+//---------------------------------------------------------------------------------------
+/*static evmc_instance* create_evm() {
+    return evmc_create_evmone();
+}*/
+//---------------------------------------------------------------------------------------
+/*static bool execute_evm_bytecode(const std::string& bytecode, const std::vector<evmc_uint256be>& args, evmc_result& result) {
+    evmc_instance* evm_instance = create_evm();
+    if (!evm_instance) {
+        MERROR("Failed to create EVM instance");
+        return false;
+    }
+
+    evmc_context* host_context = cryptonote::setup_host_context();
+
+    evmc_message msg = {};
+    msg.gas = 1000000;
+    msg.kind = EVMC_CALL;
+
+    result = evm_instance->execute(evm_instance, host_context, EVMC_ISTANBUL, &msg, (uint8_t*)bytecode.data(), bytecode.size());
+
+    evm_instance->destroy(evm_instance);
+
+    if (result.release) {
+        result.release(&result);
+    }
+
+    return result.status_code == EVMC_SUCCESS;
+}
+//-----------------------------------------------------------------------------------------------------
+bool process_evm_transaction(const cryptonote::transaction& tx, cryptonote::transaction_verification_context& tvc) {
+    if (!cryptonote::is_coinbase(tx)) {
+        std::string bytecode = get_evm_bytecode_from_tx(tx);
+        std::vector<evmc_uint256be> args = get_evm_args_from_tx(tx);
+        evmc_result result;
+
+        if (!execute_evm_bytecode(bytecode, args, result)) {
+            tvc.m_invalid_tx = true;
+            MERROR("EVM transaction execution failed");
+            return false;
+        }
+
+        MINFO("EVM transaction executed successfully");
+    }
+    return true;
+}
+*/
+

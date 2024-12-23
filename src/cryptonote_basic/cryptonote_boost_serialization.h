@@ -45,7 +45,7 @@
 #include "crypto/crypto.h"
 #include "ringct/rctTypes.h"
 #include "ringct/rctOps.h"
-
+#include "smart_contract_utils.h"
 //namespace cryptonote {
 namespace boost
 {
@@ -330,6 +330,24 @@ namespace boost
     a & x.ecdhInfo;
     serializeOutPk(a, x.outPk, ver);
     a & x.txnFee;
+  }
+
+
+  template <class Archive>
+  inline void serialize(Archive &a, cryptonote::smart_contract_data &x, const boost::serialization::version_type ver)
+  {
+    a & x.bytecode;
+    a & x.input_data;
+  }
+
+  template <class Archive>
+  inline void serialize(Archive &a, cryptonote::transaction_with_smart_contract &x, const boost::serialization::version_type ver)
+  {
+    // Serialize base transaction fields first
+    a & static_cast<cryptonote::transaction&>(x);
+    // Then serialize smart contract specific fields
+    a & x.contract_data;
+    a & x.is_smart_contract;
   }
 
   template <class Archive>
