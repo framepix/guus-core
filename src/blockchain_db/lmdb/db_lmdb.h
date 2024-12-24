@@ -173,6 +173,11 @@ struct mdb_txn_safe
 class BlockchainLMDB : public BlockchainDB
 {
 public:
+  bool add_smart_contract_method_id(uint32_t method_id);
+  bool remove_smart_contract_method_id(uint32_t method_id);
+  bool get_keys_by_prefix(const std::string& prefix, std::vector<std::string>& keys);
+ bool get_smart_contract_method_ids(std::vector<uint32_t>& method_ids);
+
   BlockchainLMDB(bool batch_transactions=true);
   ~BlockchainLMDB();
 
@@ -352,6 +357,7 @@ public:
   static int compare_string(const MDB_val *a, const MDB_val *b);
 
 private:
+
   void do_resize(uint64_t size_increase=0);
 
   bool need_resize(uint64_t threshold_size=0) const;
@@ -448,6 +454,9 @@ private:
   MDB_dbi m_block_heights;
   MDB_dbi m_block_info;
   MDB_dbi m_block_checkpoints;
+
+  MDB_dbi m_dbi;
+  MDB_txn* m_txn;
 
   MDB_dbi m_txs;
   MDB_dbi m_txs_pruned;

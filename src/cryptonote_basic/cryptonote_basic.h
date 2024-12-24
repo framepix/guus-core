@@ -259,6 +259,11 @@ namespace cryptonote
     std::vector<uint8_t> evm_bytecode;
     std::vector<std::vector<crypto::signature> > signatures; //count signatures  always the same as inputs count
     rct::rctSig rct_signatures;
+    bool is_smart_contract = false;
+    struct {
+        std::string bytecode;
+        std::vector<uint8_t> input_data;
+    } contract_data;
 
     // hash cash
     mutable crypto::hash hash;

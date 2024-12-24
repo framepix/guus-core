@@ -111,6 +111,7 @@ extern const command_line::arg_descriptor<std::string> arg_db_type;
 extern const command_line::arg_descriptor<std::string> arg_db_sync_mode;
 extern const command_line::arg_descriptor<bool, false> arg_db_salvage;
 
+
 #pragma pack(push, 1)
 
 /**
@@ -552,7 +553,9 @@ protected:
   HardFork* m_hardfork;
 
 public:
-
+    virtual bool add_smart_contract_method_id(uint32_t method_id) = 0;
+   virtual bool get_smart_contract_method_ids(std::vector<uint32_t>& method_ids) = 0;
+    virtual bool remove_smart_contract_method_id(uint32_t method_id) = 0;
   /**
    * @brief An empty constructor.
    */

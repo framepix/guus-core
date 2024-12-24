@@ -28,8 +28,11 @@
 //
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
+
+#include <vector>
+#include <stdexcept>
 #include <algorithm>
-#include <cstdio>
+#include <cstdint>
 
 #include "common/rules.h"
 #include "include_base_utils.h"
@@ -58,7 +61,7 @@
 #include "common/varint.h"
 #include "common/pruning.h"
 #include "common/lock.h"
-
+#include "cryptonote_basic/smart_contract_utils.h"
 #include <boost/filesystem.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 
@@ -93,6 +96,8 @@ DISABLE_VS_WARNINGS(4267)
 // used to overestimate the block reward when estimating a per kB to use
 #define BLOCK_REWARD_OVERESTIMATE (10 * 1000000000000)
 
+constexpr uint8_t SMART_CONTRACT_HF_VERSION = 16;
+
 Blockchain::block_extended_info::block_extended_info(const alt_block_data_t &src, block const &blk, checkpoint_t const *checkpoint)
 {
   assert((src.checkpointed) == (checkpoint != nullptr));
@@ -122,6 +127,11 @@ Blockchain::Blockchain(tx_memory_pool& tx_pool, frame_pixs::frame_pix_list& fram
   m_prepare_height(0)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
+  if (has_smart_contract_support()) {
+    load_smart_contract_methods_from_db();
+  } else {
+    LOG_PRINT_L3("Blockchain does not support smart contracts yet, skipping initialization.");
+  }
 }
 //------------------------------------------------------------------
 Blockchain::~Blockchain()
@@ -138,6 +148,23 @@ bool Blockchain::have_tx(const crypto::hash &id) const
   // well as not accessing class members, even read only (ie, m_invalid_blocks). The caller must
   // lock if it is otherwise needed.
   return m_db->tx_exists(id);
+}
+//------------------------------------------------------------------
+bool Blockchain::has_smart_contract_support() const {
+  // Check if the current hard fork version supports smart contracts
+  if (m_hardfork == nullptr) {
+    LOG_PRINT_L1("Hardfork object not initialized, assuming no smart contract support.");
+    return false;
+  }
+
+  uint8_t current_version = m_hardfork->get_current_version();
+  if (current_version >= SMART_CONTRACT_HF_VERSION) {
+    LOG_PRINT_L3("Smart contract support is available (current HF version: " << (int)current_version << ").");
+    return true;
+  }
+
+  LOG_PRINT_L3("Smart contract support not available (current HF version: " << (int)current_version << ").");
+  return false;
 }
 //------------------------------------------------------------------
 bool Blockchain::have_tx_keyimg_as_spent(const crypto::key_image &key_im) const
@@ -401,6 +428,35 @@ bool Blockchain::load_missing_blocks_into_guus_subsystems()
     m_frame_pix_list.store();
 
   return true;
+}
+//------------------------------------------------------------------
+void Blockchain::load_smart_contract_methods_from_db() {
+  LOG_PRINT_L3("Blockchain::load_smart_contract_methods_from_db: Attempting to load method IDs from database.");
+
+  if (!has_smart_contract_support()) {
+    LOG_PRINT_L3("Smart contract support not enabled, skipping method ID loading.");
+    return;
+  }
+
+  try {
+    std::vector<uint32_t> method_ids;
+    if (m_db->get_smart_contract_method_ids(method_ids)) {
+      // Clear existing registry before inserting new IDs to ensure data consistency
+      m_smart_contract_method_registry.clear();
+
+      for (uint32_t id : method_ids) {
+        m_smart_contract_method_registry.insert(id);
+      }
+      LOG_PRINT_L3("Successfully loaded " << method_ids.size() << " smart contract method IDs from the database.");
+    } else {
+      MERROR("Failed to load smart contract method IDs from database.");
+    }
+  } 
+  catch (const std::exception& e) {
+    MERROR("Exception occurred while loading smart contract methods from database: " << e.what());
+    // Optionally, you might want to throw the exception further if this error is critical
+    // throw;
+  }
 }
 //------------------------------------------------------------------
 //FIXME: possibly move this into the constructor, to avoid accidentally
@@ -3474,6 +3530,35 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     }
   }
 
+  if (tx.is_smart_contract) {
+     LOG_PRINT_L3("Blockchain::check_tx_inputs: Validating smart contract transaction.");
+
+  // Validate smart contract specifics
+  smart_contract_validation_result validation_result = validate_smart_contract(tx);
+
+  if (validation_result != smart_contract_validation_result::VALID) {
+    tvc.m_verifivation_failed = true;
+    switch (validation_result) {
+      case smart_contract_validation_result::INVALID_BYTECODE:
+        MERROR_VER("Smart contract transaction has invalid bytecode: " << get_transaction_hash(tx));
+        break;
+      case smart_contract_validation_result::EXCEEDS_GAS_LIMIT:
+        MERROR_VER("Smart contract transaction exceeds gas limit: " << get_transaction_hash(tx));
+        break;
+      case smart_contract_validation_result::MISSING_REQUIRED_DATA:
+        MERROR_VER("Smart contract transaction missing required data: " << get_transaction_hash(tx));
+        break;
+      // (TODO): Add cases for other error types as needed
+      default:
+        MERROR_VER("Smart contract validation failed for transaction: " << get_transaction_hash(tx));
+        break;
+    }
+    return false;
+  }
+
+    LOG_PRINT_L3("Smart contract validation passed for transaction: " << get_transaction_hash(tx));
+  }
+
   return true;
 }
 
@@ -3824,6 +3909,282 @@ bool Blockchain::flush_txes_from_pool(const std::vector<crypto::hash> &txids)
     }
   }
   return res;
+}
+//------------------------------------------------------------------
+  smart_contract_validation_result Blockchain::validate_smart_contract(const transaction& tx) const {
+  // Check if bytecode exists and is in correct format
+  if (!has_valid_bytecode(tx.contract_data.bytecode)) {
+    return smart_contract_validation_result::INVALID_BYTECODE;
+  }
+
+  // Check gas limits
+  if (calculate_gas_usage(tx) > get_max_gas_limit()) {
+    return smart_contract_validation_result::EXCEEDS_GAS_LIMIT;
+  }
+
+  // Check for required data
+  if (!tx.contract_data.input_data.empty() && !validate_input_data(tx.contract_data.input_data)) {
+    return smart_contract_validation_result::MISSING_REQUIRED_DATA;
+  }
+}
+//------------------------------------------------------------------
+bool Blockchain::has_valid_bytecode(const std::string& bytecode) const {
+  LOG_PRINT_L3("Blockchain::has_valid_bytecode: Validating bytecode.");
+
+  // Check if the bytecode is empty
+  if (bytecode.empty()) {
+    MERROR_VER("Bytecode is empty.");
+    return false;
+  }
+
+  // Check for minimum length to ensure there's at least a magic number or some basic structure
+  const size_t min_bytecode_length = 4; // Assuming a magic number is at least 4 bytes
+  if (bytecode.length() < min_bytecode_length) {
+    MERROR_VER("Bytecode length is less than minimum expected length of " << min_bytecode_length << " bytes.");
+    return false;
+  }
+
+  // Check for magic number at the beginning of the bytecode
+  const std::string expected_magic_number = "\x60\x80\x60\x40"; //magic number for EVM bytecode
+  if (bytecode.substr(0, expected_magic_number.length()) != expected_magic_number) {
+    MERROR_VER("Bytecode does not start with the expected magic number.");
+    return false;
+  }
+
+  // Check if the bytecode size is within reasonable limits
+  const size_t max_bytecode_size = 24 * 1024; // 24KB maximum bytecode size
+  if (bytecode.length() > max_bytecode_size) {
+    MERROR_VER("Bytecode exceeds maximum allowed size of " << max_bytecode_size << " bytes.");
+    return false;
+  }
+
+  // Additional checks could include:
+  // - Ensuring the bytecode can be parsed correctly by your VM or interpreter
+  // - Checking for any known patterns that indicate invalid or malicious bytecode
+
+  // TODO: Implement more advanced bytecode analysis if needed, like opcode parsing or static analysis
+
+  LOG_PRINT_L3("Bytecode validation passed.");
+  return true;
+}
+//--------------------------------------------------------------------------------
+uint64_t Blockchain::estimate_bytecode_gas(const std::string& bytecode) const {
+  uint64_t gas = 0;
+  // Here, implement bytecode analysis. A very basic approach:
+  // - Count opcodes, each opcode might have a different gas cost
+  // - flat rate per byte:
+  const uint64_t gas_per_byte = 1; // TODO: will adjust based on actual gas costs
+  gas = bytecode.length() * gas_per_byte;
+
+  // More accurate estimation would involve parsing bytecode for opcodes:
+  // for (size_t i = 0; i < bytecode.length(); ++i) {
+  //   uint8_t opcode = bytecode[i];
+  //   gas += get_gas_cost_for_opcode(opcode); // Where get_gas_cost_for_opcode would be a function you define
+  // }
+
+  return gas;
+}
+//------------------------------------------------------------------------------
+uint64_t Blockchain::estimate_input_data_gas(const std::vector<uint8_t>& input_data) const {
+  uint64_t gas = 0;
+  // Gas cost for input data could be based on size or content:
+  // - Non-zero bytes might cost more than zero bytes
+  const uint64_t gas_per_non_zero_byte = 68;
+  const uint64_t gas_per_zero_byte = 4;
+
+  for (uint8_t byte : input_data) {
+    gas += byte == 0 ? gas_per_zero_byte : gas_per_non_zero_byte;
+  }
+
+  return gas;
+}
+//--------------------------------------------------------------------------------
+uint64_t Blockchain::calculate_gas_usage(const transaction& tx) const {
+  LOG_PRINT_L3("Blockchain::calculate_gas_usage: Calculating gas for transaction.");
+
+  // Check if the transaction has smart contract data
+  if (!tx.is_smart_contract) {
+    MERROR_VER("Not a smart contract transaction.");
+    return 0; // No gas for non-smart contract transactions
+  }
+
+  const std::string& bytecode = tx.contract_data.bytecode;
+  const std::vector<uint8_t>& input_data = tx.contract_data.input_data;
+
+  uint64_t gas_used = 0;
+
+  try {
+    // Estimate gas for bytecode execution
+    gas_used += estimate_bytecode_gas(bytecode);
+
+    // Estimate gas for input data processing
+    gas_used += estimate_input_data_gas(input_data);
+
+    // Add gas for transaction overhead (like transaction creation, signing, etc.)
+    gas_used += get_transaction_overhead_gas();
+    
+    // Additional gas for specific operations if needed, e.g., storage writes, calls to other contracts, etc.
+    // Keep it simple for now.
+
+    LOG_PRINT_L3("Estimated gas for transaction " << get_transaction_hash(tx) << ": " << gas_used);
+  }
+  catch (const std::exception& e) {
+    MERROR_VER("Error in gas calculation for transaction " << get_transaction_hash(tx) << ": " << e.what());
+    throw; // Rethrow to let higher-level handlers deal with this, or return a default high gas value
+  }
+
+  return gas_used;
+}
+
+//----------------------------------------------------------------------------
+// Methods for gas estimation:
+/*
+uint64_t Blockchain::estimate_bytecode_gas(const std::string& bytecode) const {
+  uint64_t gas = 0;
+  // Here, implement bytecode analysis. A very basic approach:
+  // - Count opcodes, each opcode might have a different gas cost
+  // - flat rate per byte:
+  const uint64_t gas_per_byte = 1; // TODO: will adjust based on actual gas costs
+  gas = bytecode.length() * gas_per_byte;
+
+  // More accurate estimation would involve parsing bytecode for opcodes:
+  // for (size_t i = 0; i < bytecode.length(); ++i) {
+  //   uint8_t opcode = bytecode[i];
+  //   gas += get_gas_cost_for_opcode(opcode); // Where get_gas_cost_for_opcode would be a function you define
+  // }
+
+  return gas;
+}
+//------------------------------------------------------------------------------
+uint64_t Blockchain::estimate_input_data_gas(const std::vector<uint8_t>& input_data) const {
+  uint64_t gas = 0;
+  // Gas cost for input data could be based on size or content:
+  // - Non-zero bytes might cost more than zero bytes
+  const uint64_t gas_per_non_zero_byte = 68;
+  const uint64_t gas_per_zero_byte = 4;
+  
+  for (uint8_t byte : input_data) {
+    gas += byte == 0 ? gas_per_zero_byte : gas_per_non_zero_byte;
+  }
+
+  return gas;
+}*/
+//-------------------------------------------------------------------------------
+uint64_t Blockchain::get_transaction_overhead_gas() const {
+  LOG_PRINT_L3("Blockchain::get_transaction_overhead_gas: Retrieving transaction overhead gas.");
+
+  // Base gas cost for transaction overhead, can be adjusted based on blockchain parameters
+  uint64_t base_overhead = 21000;
+
+  // Adjustments for different scenarios or hard fork versions
+  uint64_t adjusted_overhead = base_overhead;
+
+  // Conditional adjustments:
+  /*if (m_hardfork->get_current_version() >= network_version_17) {
+    //Increase in gas cost for signature verification in a new hard fork, if the current one needs to be adjusted
+    adjusted_overhead += 1000; 
+  }*/
+
+  /**Further adjustments could be based on:
+   * - Number of signatures
+   * - Complexity of transaction structure
+   * - Any other factors that might affect the baseline cost of processing a transaction
+   **/
+  return adjusted_overhead;
+}
+//--------------------------------------------------------------------------------
+uint64_t Blockchain::get_max_gas_limit() const {
+  // Fetch or calculate the max gas limit
+  return 1000000; // TODO: CHange later
+}
+//--------------------------------------------------------------------------------
+bool Blockchain::validate_input_data(const std::vector<uint8_t>& input_data) const {
+  LOG_PRINT_L3("Blockchain::validate_input_data: Validating smart contract input data.");
+
+  try {
+    // Check for maximum input data size to prevent DoS
+    const size_t max_input_data_size = 64 * 1024; // e.g., 64 KB
+    if (input_data.size() > max_input_data_size) {
+      MERROR_VER("Input data exceeds maximum size of " << max_input_data_size << " bytes.");
+      return false;
+    }
+
+    // Smart contract ABI typically starts with a function selector (4 bytes)
+    if (input_data.size() < 4) {
+      MERROR_VER("Input data is too short to contain a valid function selector.");
+      return false;
+    }
+
+    // Extract method ID
+    uint32_t method_id = (input_data[0] << 24) | (input_data[1] << 16) | (input_data[2] << 8) | input_data[3];
+    if (!is_valid_smart_contract_method_id(method_id)) {
+      MERROR_VER("Invalid method ID in input data: " << std::hex << method_id);
+      return false;
+    }
+
+    // Check for data structure integrity post-method ID
+    // Assuming parameters are 32-byte aligned in this example (common in Ethereum ABI)
+    if (input_data.size() > 4 && (input_data.size() - 4) % 32 != 0) {
+      MERROR_VER("Input data parameters are not properly aligned.");
+      return false;
+    }
+
+    // Optionally, deeper ABI decoding could be performed here:
+    // - Decode function parameters
+    // - Validate types and ranges of parameters
+    // - Check for nested structures or dynamic arrays if applicable
+
+    // TODO: Implement detailed ABI decoding if needed
+
+    LOG_PRINT_L3("Smart contract input data validation passed.");
+    return true;
+  } 
+  catch (const std::exception& e) {
+    MERROR_VER("Exception during input data validation: " << e.what());
+    return false;
+  }
+}
+//------------------------------------------------------------------
+bool Blockchain::register_smart_contract_method_id(uint32_t method_id) {
+  LOG_PRINT_L3("Blockchain::register_smart_contract_method_id: Registering method ID " << std::hex << method_id);
+  
+  auto [it, inserted] = m_smart_contract_method_registry.insert(method_id);
+  if (inserted) {
+    if (!save_method_to_db(method_id)) {
+      MERROR("Failed to save new method ID to database");
+      m_smart_contract_method_registry.erase(method_id); // Rollback
+      return false;
+    }
+    return true;
+  }
+  MWARNING("Method ID " << std::hex << method_id << " already in registry, not re-added.");
+  return false;
+}
+//---------------------------------------------------------------------------
+bool Blockchain::unregister_smart_contract_method_id(uint32_t method_id) {
+  LOG_PRINT_L3("Blockchain::unregister_smart_contract_method_id: Unregistering method ID " << std::hex << method_id);
+  
+  if (m_smart_contract_method_registry.erase(method_id) > 0) {
+    if (!remove_method_from_db(method_id)) {
+      MERROR("Failed to remove method ID from database");
+      return false;
+    }
+    return true;
+  }
+  MWARNING("Method ID " << std::hex << method_id << " not found in registry, no action taken.");
+  return false;
+}
+//------------------------------------------------------------------
+bool Blockchain::is_valid_smart_contract_method_id(uint32_t method_id) const {
+  return m_smart_contract_method_registry.find(method_id) != m_smart_contract_method_registry.end();
+}
+//----------------------------------------------------------------
+bool Blockchain::save_method_to_db(uint32_t method_id) const {
+  return m_db->add_smart_contract_method_id(method_id);
+}
+//----------------------------------------------------------------
+bool Blockchain::remove_method_from_db(uint32_t method_id) const {
+  return m_db->remove_smart_contract_method_id(method_id);
 }
 //------------------------------------------------------------------
 //      Needs to validate the block and acquire each transaction from the

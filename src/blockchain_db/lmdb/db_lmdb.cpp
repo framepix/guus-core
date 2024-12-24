@@ -148,6 +148,71 @@ private:
 namespace cryptonote
 {
 
+bool BlockchainLMDB::get_keys_by_prefix(const std::string& prefix, std::vector<std::string>& keys) {
+  MDB_cursor *cursor;
+  MDB_val key_data, value_data;
+  int rc = mdb_cursor_open(m_txn, m_dbi, &cursor);
+
+  if (rc != MDB_SUCCESS) {
+    MERROR("Failed to open cursor: " << mdb_strerror(rc));
+    return false;
+  }
+
+  key_data.mv_size = prefix.size();
+  key_data.mv_data = const_cast<char*>(prefix.c_str());
+
+  while ((rc = mdb_cursor_get(cursor, &key_data, &value_data, MDB_SET_RANGE)) == MDB_SUCCESS) {
+    std::string key_str(static_cast<char*>(key_data.mv_data), key_data.mv_size);
+    if (key_str.compare(0, prefix.size(), prefix) != 0) {
+      break; // No more keys with this prefix
+    }
+    keys.push_back(key_str);
+    rc = mdb_cursor_get(cursor, &key_data, &value_data, MDB_NEXT);
+  }
+
+  mdb_cursor_close(cursor);
+  return rc == MDB_SUCCESS || rc == MDB_NOTFOUND; // NOTFOUND is not an error here
+}
+
+/*bool BlockchainLMDB::get_smart_contract_method_ids(std::vector<uint32_t>& method_ids) {
+  try {
+    // Start a read transaction
+    db_rtxn_guard rtxn_guard(this);
+
+    // Define the prefix or key for smart contract method IDs
+    // Assuming method IDs are stored under a specific key or with a prefix
+    const std::string method_id_prefix = "SMART_CONTRACT_METHOD_ID_";
+
+    // Get all keys that start with the prefix
+    std::vector<std::string> keys;
+    if (!get_keys_by_prefix(method_id_prefix, keys)) {
+      MERROR("Failed to retrieve keys for smart contract method IDs");
+      return false;
+    }
+
+    // Convert the keys (which might be in string form) to uint32_t
+    method_ids.clear();
+    method_ids.reserve(keys.size());
+
+    for (const auto& key : keys) {
+      // Assuming the key format is something like "SMART_CONTRACT_METHOD_ID_0x12345678"
+      std::string id_str = key.substr(method_id_prefix.length());
+      uint32_t method_id = 0;
+      if (!epee::string_tools::hex_to_pod(id_str, method_id)) {
+        MERROR("Failed to convert method ID string to uint32_t: " << id_str);
+        continue; // Skip this entry but continue with the rest
+      }
+      method_ids.push_back(method_id);
+    }
+
+    return true;
+  }
+  catch (const std::exception& e) {
+    MERROR("Exception in get_smart_contract_method_ids: " << e.what());
+    return false;
+  }
+}*/
+
 int BlockchainLMDB::compare_uint64(const MDB_val *a, const MDB_val *b)
 {
   uint64_t va, vb;
@@ -652,7 +717,19 @@ void BlockchainLMDB::do_resize(uint64_t increase_size)
 
   mdb_txn_safe::allow_new_txns();
 }
+/*
+bool BlockchainLMDB::add_smart_contract_method_id(uint32_t method_id) {
+    // Implementation
+    mdb_txn_cursors *m_cursors = &m_wcursors;
+    CURSOR(properties)
 
+    MDB_val_str(k, "smart_contract_method");
+    MDB_val_copy<uint32_t> v(method_id);
+    auto result = mdb_cursor_put(m_cur_properties, &k, &v, MDB_APPEND);
+    if (result)
+        throw0(DB_ERROR(lmdb_error("Failed to add smart contract method ID to db transaction: ", result).c_str()));
+    return true;
+}*/
 // threshold_size is used for batch transactions
 bool BlockchainLMDB::need_resize(uint64_t threshold_size) const
 {
@@ -1084,6 +1161,46 @@ void BlockchainLMDB::remove_transaction_data(const crypto::hash& tx_hash, const 
   // Don't delete the tx_indices entry until the end, after we're done with val_tx_id
   if (mdb_cursor_del(m_cur_tx_indices, 0))
       throw1(DB_ERROR("Failed to add removal of tx index to db transaction"));
+}
+
+bool BlockchainLMDB::add_smart_contract_method_id(uint32_t method_id) {
+    // Implementation for adding a method ID
+    mdb_txn_cursors *m_cursors = &m_wcursors;
+    CURSOR(properties)
+
+    MDB_val_str(k, "smart_contract_method");
+    MDB_val_copy<uint32_t> v(method_id);
+    auto result = mdb_cursor_put(m_cur_properties, &k, &v, MDB_APPEND);
+    if (result)
+        throw0(DB_ERROR(lmdb_error("Failed to add smart contract method ID to db transaction: ", result).c_str()));
+    return true;
+}
+
+bool BlockchainLMDB::remove_smart_contract_method_id(uint32_t method_id) {
+    // Implementation for removing a method ID
+    mdb_txn_cursors *m_cursors = &m_wcursors;
+    CURSOR(properties)
+
+    MDB_val_str(k, "smart_contract_method");
+    MDB_val v;
+    auto get_result = mdb_cursor_get(m_cur_properties, &k, &v, MDB_SET_KEY);
+    if (get_result == MDB_NOTFOUND) {
+        return true; // Method ID not found, no action needed
+    }
+    if (get_result)
+        throw0(DB_ERROR(lmdb_error("Failed to get smart contract method ID from db: ", get_result).c_str()));
+    do {
+        uint32_t id;
+        std::memcpy(&id, v.mv_data, sizeof(id));
+        if (id == method_id) {
+            auto result = mdb_cursor_del(m_cur_properties, 0);
+            if (result)
+                throw0(DB_ERROR(lmdb_error("Failed to remove smart contract method ID from db: ", result).c_str()));
+            return true;
+        }
+    } while (mdb_cursor_get(m_cur_properties, &k, &v, MDB_NEXT_DUP) == 0);
+
+    return true; // Method ID not found in the list
 }
 
 uint64_t BlockchainLMDB::add_output(const crypto::hash& tx_hash,

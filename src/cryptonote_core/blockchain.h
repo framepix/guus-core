@@ -76,6 +76,13 @@ namespace cryptonote
   struct tx_pool_options;
   struct test_options;
 
+  enum class smart_contract_validation_result {
+  VALID,
+  INVALID_BYTECODE,
+  EXCEEDS_GAS_LIMIT,
+  MISSING_REQUIRED_DATA,
+  //(TODO): Add more as needed
+  };
   /** Declares ways in which the BlockchainDB backend should be told to sync
    *
    */
@@ -102,6 +109,11 @@ namespace cryptonote
   class Blockchain
   {
   public:
+      smart_contract_validation_result validate_smart_contract(const transaction& tx) const;
+      bool register_smart_contract_method_id(uint32_t method_id);
+      bool unregister_smart_contract_method_id(uint32_t method_id);
+      bool is_valid_smart_contract_method_id(uint32_t method_id) const;
+      bool has_smart_contract_support() const;
     /**
      * @brief container for passing a block and metadata about it on the blockchain
      */
@@ -1060,9 +1072,18 @@ namespace cryptonote
 #ifndef IN_UNIT_TESTS
   private:
 #endif
-
+    uint64_t get_transaction_overhead_gas() const;
+    uint64_t estimate_bytecode_gas(const std::string& bytecode) const;
+    uint64_t estimate_input_data_gas(const std::vector<uint8_t>& input_data) const;
+    bool has_valid_bytecode(const std::string& bytecode) const;
+    uint64_t calculate_gas_usage(const transaction& tx) const;
+    uint64_t get_max_gas_limit() const;
+    bool validate_input_data(const std::vector<uint8_t>& input_data) const;
     bool load_missing_blocks_into_guus_subsystems();
-
+    std::unordered_set<uint32_t> m_smart_contract_method_registry;
+    void load_smart_contract_methods_from_db();
+    bool save_method_to_db(uint32_t method_id) const;
+    bool remove_method_from_db(uint32_t method_id) const;
     // TODO: evaluate whether or not each of these typedefs are left over from blockchain_storage
     typedef std::unordered_set<crypto::key_image> key_images_container;
 

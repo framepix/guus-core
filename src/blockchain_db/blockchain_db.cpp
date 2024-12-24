@@ -280,6 +280,45 @@ uint64_t BlockchainDB::add_block( const std::pair<block, blobdata>& blck
   return prev_height;
 }
 
+bool BlockchainLMDB::get_smart_contract_method_ids(std::vector<uint32_t>& method_ids) {
+    try {
+        // Start a read transaction
+        db_rtxn_guard rtxn_guard(this);
+
+        // Define the prefix or key for smart contract method IDs
+        // Assuming method IDs are stored under a specific key or with a prefix
+        const std::string method_id_prefix = "SMART_CONTRACT_METHOD_ID_";
+
+        // Get all keys that start with the prefix
+        std::vector<std::string> keys;
+        if (!get_keys_by_prefix(method_id_prefix, keys)) {
+            MERROR("Failed to retrieve keys for smart contract method IDs");
+            return false;
+        }
+
+        // Convert the keys (which might be in string form) to uint32_t
+        method_ids.clear();
+        method_ids.reserve(keys.size());
+
+        for (const auto& key : keys) {
+            // Assuming the key format is something like "SMART_CONTRACT_METHOD_ID_0x12345678"
+            std::string id_str = key.substr(method_id_prefix.length());
+            uint32_t method_id = 0;
+            if (!epee::string_tools::hex_to_pod(id_str, method_id)) {
+                MERROR("Failed to convert method ID string to uint32_t: " << id_str);
+                continue; // Skip this entry but continue with the rest
+            }
+            method_ids.push_back(method_id);
+        }
+
+        return true;
+    }
+    catch (const std::exception& e) {
+        MERROR("Exception in get_smart_contract_method_ids: " << e.what());
+        return false;
+    }
+}
+
 void BlockchainDB::set_hard_fork(HardFork* hf)
 {
   m_hardfork = hf;
