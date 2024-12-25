@@ -19,3 +19,6 @@
 [submodule "external/loki-mq"]
 	path = external/loki-mq
 	url = https://github.com/framepix/oxen-mq
+[submodule "external/evmone"]
+	path = external/evmone
+	url = https://github.com/framepix/evmone
