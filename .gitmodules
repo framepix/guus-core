@@ -10,9 +10,6 @@
 [submodule "external/randomx"]
 	path = external/randomx
 	url = https://github.com/framepix/randomx
-[submodule "external/evmone"]
-	path = external/evmone
-	url = https://github.com/ethereum/evmone
 [submodule "external/intx"]
 	path = external/intx
 	url = https://github.com/framepix/intx
