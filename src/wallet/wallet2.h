@@ -68,6 +68,11 @@
 
 #include "common/guus_integration_test_hooks.h"
 
+
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "wallet.wallet2"
 
@@ -330,6 +335,7 @@ private:
     friend class wallet_keys_unlocker;
     friend class wallet_device_callback;
   public:
+    evmc_result execute_evm(const std::vector<uint8_t>& bytecode, const evmc_message& msg);
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
     enum RefreshType {
       RefreshFull,
@@ -1579,9 +1585,20 @@ private:
     void finish_rescan_bc_keep_key_images(uint64_t transfer_height, const crypto::hash &hash);
     void set_offline(bool offline = true);
 
+    // Destroys an EVMC-compatible context
+    void destroy_evm_context(evmc_host_context* ctx);
+    evmc_host_context* create_evm_context();
 
     std::atomic<bool> m_long_poll_disabled;
   private:
+   cryptonote::transaction  m_current_tx;
+    // Creates an EVMC-compatible context
+    //evmc_host_context* create_evm_context();
+
+    // Destroys an EVMC-compatible context
+//    void destroy_evm_context(evmc_host_context* ctx);
+
+    cryptonote::Blockchain* m_blockchain_storage; // Blockchain reference
     /*!
      * \brief  Stores wallet information to wallet file.
      * \param  keys_file_name Name of wallet file

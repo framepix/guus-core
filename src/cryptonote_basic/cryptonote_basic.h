@@ -160,6 +160,7 @@ namespace cryptonote
     v3_per_output_unlock_times,
     v4_tx_types,
     v5_tx_types,
+    v6_tx_types,
     _count,
   };
   enum class txtype : uint16_t {

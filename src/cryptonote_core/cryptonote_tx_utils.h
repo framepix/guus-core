@@ -34,6 +34,9 @@
 #include <boost/serialization/utility.hpp>
 #include "ringct/rctOps.h"
 #include "cryptonote_core/frame_pix_list.h"
+#include "evmc/evmc.h"
+#include "evmc/evmc.hpp"
+#include "cryptonote_basic/smart_contract_utils.h"
 
 namespace cryptonote
 {
@@ -105,6 +108,13 @@ namespace cryptonote
   // NOTE: Block reward function that should be called after hard fork v10
   bool get_guus_block_reward(size_t median_weight, size_t current_block_weight, uint64_t already_generated_coins, int hard_fork_version, block_reward_parts &result, const guus_block_reward_context &guus_context);
 
+  class account_keys;
+
+  // EVM data in transactions
+  bool add_smart_contract_data_to_tx(transaction& tx, const smart_contract_data& sc_data);
+  bool add_smart_contract_data_to_tx(transaction& tx, const std::vector<uint8_t>& bytecode, const std::vector<uint8_t>& function_call);
+  std::vector<uint8_t> hex_to_bytes(const std::string& hex);
+  std::string get_contract_bytecode(const cryptonote::transaction &tx);
   struct tx_source_entry
   {
     typedef std::pair<uint64_t, rct::ctkey> output_entry;

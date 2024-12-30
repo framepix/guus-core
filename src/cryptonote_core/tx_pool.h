@@ -51,6 +51,9 @@
 
 namespace cryptonote
 {
+
+bool execute_smart_contract(const std::string &bytecode, const std::vector<uint8_t> &input_data);
+
   class Blockchain;
   /************************************************************************/
   /*                                                                      */
@@ -556,7 +559,6 @@ namespace cryptonote
      */
     void set_txpool_max_weight(size_t bytes);
   private:
-
     /**
      * @brief insert key images into m_spent_key_images
      *

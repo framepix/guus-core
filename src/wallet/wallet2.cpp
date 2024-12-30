@@ -87,6 +87,10 @@ using namespace epee;
 #include "lns.h"
 #include "string_coding.h"
 
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include "cryptonote_core/evm_host.h"
 extern "C"
 {
 #include "crypto/keccak.h"
@@ -1519,6 +1523,62 @@ bool wallet2::frozen(size_t idx) const
 void wallet2::freeze(const crypto::key_image &ki)
 {
   freeze(get_transfer_details(ki));
+}
+//----------------------------------------------------------------------------------------------------
+// Executes EVM bytecode using EVMC
+evmc_result wallet2::execute_evm(const std::vector<uint8_t>& bytecode, const evmc_message& msg) {
+    try {
+        auto vm = evmc::VM{evmc_create_evmone()};
+        evmc_host_context* context = create_evm_context();
+        if (!context) {
+            throw std::runtime_error("Failed to create EVMC context");
+        }
+
+        evmc_revision rev = EVMC_CONSTANTINOPLE; // Or whatever revision you want to use
+
+        evmc_host_interface host_interface = {
+            .account_exists = monero_account_exists,
+            .get_storage = nullptr,
+            .set_storage = monero_set_storage,
+            .get_balance = monero_get_balance,
+        };
+
+        // Use the correct execute function signature
+        evmc::Result result = vm.execute(host_interface, context, rev, msg, bytecode.data(), bytecode.size());
+
+        destroy_evm_context(context);
+
+        evmc_result raw_result = {
+            .status_code = result.status_code,
+            .gas_left = result.gas_left,
+            .gas_refund = result.gas_refund,
+            .output_data = result.output_data,
+            .output_size = result.output_size,
+            .create_address = result.create_address
+        };
+
+        return raw_result;
+        // Here, you'll need to convert or access the evmc_result from evmc::Result
+        // Since evmc::Result seems to wrap evmc_result, you might do something like:
+        //return result; // This assumes evmc::Result can be implicitly converted or is directly usable as evmc_result
+
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception during EVM execution: " << e.what());
+        return evmc_result{EVMC_FAILURE}; // Return failure result
+    }
+}
+
+evmc_host_context* wallet2::create_evm_context() {
+    return reinterpret_cast<evmc_host_context*>(
+        new cryptonote::MoneroHostContext(m_blockchain_storage, &m_current_tx)
+    );
+}
+
+// Destroys an EVMC-compatible host context
+void wallet2::destroy_evm_context(evmc_host_context* ctx) {
+    if (ctx) {
+        delete reinterpret_cast<cryptonote::MoneroHostContext*>(ctx);
+    }
 }
 //----------------------------------------------------------------------------------------------------
 void wallet2::thaw(const crypto::key_image &ki)

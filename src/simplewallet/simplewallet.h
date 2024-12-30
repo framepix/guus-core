@@ -49,6 +49,10 @@
 #include "common/i18n.h"
 #include "common/password.h"
 #include "crypto/crypto.h"  // for definition of crypto::secret_key
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include "cryptonote_core/cryptonote_core.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "wallet.simplewallet"
@@ -89,6 +93,8 @@ namespace cryptonote
     std::string get_command_usage(const std::vector<std::string> &args);
   private:
 
+    //const evmc_host_interface* initialize_host_interface();
+
     enum ResetType { ResetNone, ResetSoft, ResetHard, ResetSoftKeepKI };
 
     bool handle_command_line(const boost::program_options::variables_map& vm);
@@ -97,6 +103,7 @@ namespace cryptonote
 
     void wallet_idle_thread();
 
+    evmc_host_interface initialize_host_interface();
     //! \return Prompts user for password and verifies against local file. Logs on error and returns `none`
     boost::optional<tools::password_container> get_and_verify_password() const;
 
@@ -114,6 +121,11 @@ namespace cryptonote
     bool spendkey(const std::vector<std::string> &args = std::vector<std::string>());
     bool seed(const std::vector<std::string> &args = std::vector<std::string>());
     bool encrypted_seed(const std::vector<std::string> &args = std::vector<std::string>());
+    // Create an EVMC execution context (set up blockchain, transaction state, etc.)
+    //evmc_host_context* create_evm_context();
+
+    // Destroy the EVMC context (clean up resources)
+   // void destroy_evm_context(evmc_context* context);
 
     /*!
      * \brief Sets seed language.
@@ -248,6 +260,7 @@ namespace cryptonote
     bool export_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
     bool import_multisig(const std::vector<std::string>& args);
     bool import_multisig_main(const std::vector<std::string>& args, bool called_by_mms);
+    bool deploy_smart_contract(const std::vector<std::string>& args);
     bool accept_loaded_tx(const tools::wallet2::multisig_tx_set &txs);
     bool sign_multisig(const std::vector<std::string>& args);
     bool sign_multisig_main(const std::vector<std::string>& args, bool called_by_mms);

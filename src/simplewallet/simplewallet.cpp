@@ -65,6 +65,7 @@
 #include "cryptonote_core/frame_pix_voting.h"
 #include "cryptonote_core/frame_pix_list.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "cryptonote_core/cryptonote_core.h"
 #include "simplewallet.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "storages/http_abstract_invoke.h"
@@ -82,6 +83,7 @@
 #include "wallet/message_store.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include "string_coding.h"
+#include <evmone/evmone.h>
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -1357,7 +1359,110 @@ bool simple_wallet::import_multisig_main(const std::vector<std::string> &args, b
   }
   return true;
 }
+//-----------------------------------------------------------------------------
+evmc_host_interface simple_wallet::initialize_host_interface()
+{
+    evmc_host_interface host = {};
+    host.account_exists = &core::account_exists_cb;
+    host.get_storage = &core::get_storage_cb;
+    host.set_storage = &core::set_storage_cb;
+    host.get_balance = &core::get_balance_cb;
+    host.get_code_size = &core::get_code_size_cb;
+    host.get_code_hash = &core::get_code_hash_cb;
+    host.copy_code = &core::copy_code_cb;
+    host.selfdestruct = &core::selfdestruct_cb;
+    host.call = &core::call_cb;
+    host.get_tx_context = &core::get_tx_context_cb;
+    host.get_block_hash = &core::get_block_hash_cb;
+    // Other callbacks if needed
 
+    return host;
+}
+//-----------------------------------------------------------------------------
+bool simple_wallet::deploy_smart_contract(const std::vector<std::string>& args)
+{
+    if (args.size() < 2) {
+        PRINT_USAGE("deploy_smart_contract <bytecode_file> <gas_limit> [<value>]");
+        return true;
+    }
+
+    const std::string bytecode_file = args[0];
+    uint64_t gas_limit;
+    if (!epee::string_tools::get_xtype_from_string(gas_limit, args[1])) {
+        fail_msg_writer() << tr("Invalid gas limit specified: ") << args[1];
+        return true;
+    }
+
+    uint64_t value = 0;
+    if (args.size() > 2 && !cryptonote::parse_amount(value, args[2])) {
+        fail_msg_writer() << tr("Invalid value amount specified: ") << args[2];
+        return true;
+    }
+
+    std::string bytecode;
+    if (!epee::file_io_utils::load_file_to_string(bytecode_file, bytecode)) {
+        fail_msg_writer() << tr("Failed to read bytecode file: ") << bytecode_file;
+        return true;
+    }
+    if (bytecode.empty()) {
+        fail_msg_writer() << tr("Bytecode is empty, deployment aborted");
+        return true;
+    }
+
+    try {
+        SCOPED_WALLET_UNLOCK();
+
+        // Convert string to byte vector for EVM execution
+        std::vector<uint8_t> contract_bytecode(bytecode.begin(), bytecode.end());
+
+        // Prepare EVM message
+        evmc_message msg = {};
+        msg.kind = EVMC_CREATE;
+        msg.gas = gas_limit;
+        evmc_uint256be uint256_value;
+        memcpy(uint256_value.bytes + 24, &value, sizeof(uint64_t));
+        msg.value = uint256_value;
+        msg.input_data = contract_bytecode.data();
+        msg.input_size = contract_bytecode.size();
+
+        // Create EVM instance using the VM wrapper
+        evmc::VM vm(evmc_create_evmone());
+        
+        // Set up the execution context using wallet2's method
+        evmc_host_context* context = m_wallet->create_evm_context();
+        if (!context) {
+            throw std::runtime_error(tr("Failed to create EVM context"));
+        }
+
+        // Initialize host interface - assuming you have a way to get this
+        evmc_host_interface host_interface =  initialize_host_interface();
+        evmc::Result result = vm.execute(host_interface, context, EVMC_SHANGHAI, msg, contract_bytecode.data(), contract_bytecode.size());
+
+        if (result.status_code == EVMC_SUCCESS) {
+            success_msg_writer() << tr("Smart contract deployed successfully. Address: ")
+                                 << epee::string_tools::pod_to_hex(result.create_address.bytes)
+                                 << tr(", Gas used: ") << gas_limit - result.gas_left;
+            // Here you might want to save the contract address or state for future reference
+            m_wallet->destroy_evm_context(context);
+        } else {
+            fail_msg_writer() << tr("Smart contract deployment failed with status: ")
+                              << result.status_code;
+            m_wallet->destroy_evm_context(context);
+            return true;
+        }
+
+
+    } catch (const std::exception& e) {
+        fail_msg_writer() << tr("Exception during smart contract deployment: ") << e.what();
+        return true;
+    } catch (...) {
+        fail_msg_writer() << tr("Unknown error occurred during smart contract deployment");
+        return true;
+    }
+
+    return true;
+}
+//-------------------------------------------------------------------------------------------
 bool simple_wallet::accept_loaded_tx(const tools::wallet2::multisig_tx_set &txs)
 {
   std::string extra_message;
@@ -2609,6 +2714,11 @@ simple_wallet::simple_wallet()
     , m_current_subaddress_account(0)
 {
   using namespace boost::placeholders;
+  m_cmd_binder.set_handler("deploy_smart_contract",
+                         boost::bind(&simple_wallet::deploy_smart_contract, this, _1),
+                         tr("deploy_smart_contract <bytecode_file> <gas_limit> [<value>]"),
+                         tr("Deploys a smart contract with given bytecode, gas limit, and optional value transfer."));
+
   m_cmd_binder.set_handler("start_mining",
                            boost::bind(&simple_wallet::start_mining, this, _1),
                            tr(USAGE_START_MINING),

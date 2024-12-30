@@ -37,6 +37,7 @@ add_library(cryptonote_core
   frame_pix_swarm.cpp
   tx_blink.cpp
   guus_name_system.cpp
+  evm_host.cpp
   tx_pool.cpp
   tx_sanity_check.cpp
   miner.cpp

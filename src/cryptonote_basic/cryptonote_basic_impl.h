@@ -53,6 +53,7 @@ namespace cryptonote {
 
     // Declaration of the function to execute EVM bytecode
     bool execute_smart_contract(const std::string &bytecode, const std::vector<uint8_t> &input_data);
+    //bool execute_smart_contract(const std::string &bytecode);
 
   class BlockAddedHook
   {

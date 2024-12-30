@@ -37,7 +37,9 @@
 #include <boost/variant.hpp>
 #include "lns.h"
 #include "cryptonote_basic.h"
-
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
 
 #define TX_EXTRA_PADDING_MAX_COUNT              255
 #define TX_EXTRA_NONCE_MAX_COUNT                255
@@ -59,6 +61,8 @@
 #define TX_EXTRA_TAG_BURN                       0x79
 #define TX_EXTRA_TAG_GUUS_NAME_SYSTEM           0x7A
 
+#define TX_EXTRA_TAG_EVM_BYTECODE             0x80
+#define TX_EXTRA_TAG_EVM_CONTEXT              0x81
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG       0xDE
 
 #define TX_EXTRA_NONCE_PAYMENT_ID               0x00
@@ -240,6 +244,7 @@ namespace cryptonote
 
     size_t depth;
     crypto::hash merkle_root;
+
 
     // load
     template <template <bool> class Archive>
@@ -548,6 +553,35 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+    struct tx_extra_evm_bytecode
+    {
+        std::vector<uint8_t> bytecode;
+
+        BEGIN_SERIALIZE()
+          FIELD(bytecode)
+        END_SERIALIZE()
+    };
+
+    // Structure to provide EVM execution context
+    struct tx_extra_evm_context
+    {
+        evmc_address origin;      // The address of the transaction sender
+        evmc_address recipient;   // The destination address of the transaction
+        evmc_uint256be value;     // The value transferred with the transaction
+        evmc_uint256be gas_price; // Gas price for transaction
+        uint64_t gas_limit;       // Gas limit for the transaction
+        evmc_bytes32 block_hash;  // Hash of the current block
+
+        BEGIN_SERIALIZE()
+          FIELD(origin)
+          FIELD(recipient)
+          FIELD(value)
+          FIELD(gas_price)
+          FIELD(gas_limit)
+          FIELD(block_hash)
+        END_SERIALIZE()
+    };
+
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;
   //   varint size;
@@ -568,7 +602,9 @@ namespace cryptonote
                          tx_extra_tx_key_image_proofs,
                          tx_extra_tx_key_image_unlock,
                          tx_extra_burn,
-                         tx_extra_guus_name_system
+                         tx_extra_guus_name_system,
+                         tx_extra_evm_bytecode,  // New EVM bytecode field
+                         tx_extra_evm_context     // New EVM context field
                         > tx_extra_field;
 }
 
@@ -592,3 +628,6 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_proofs,         TX
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_unlock,         TX_EXTRA_TAG_TX_KEY_IMAGE_UNLOCK);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_burn,                        TX_EXTRA_TAG_BURN);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_guus_name_system,            TX_EXTRA_TAG_GUUS_NAME_SYSTEM);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_evm_bytecode,                TX_EXTRA_TAG_EVM_BYTECODE);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_evm_context,                 TX_EXTRA_TAG_EVM_CONTEXT);
+

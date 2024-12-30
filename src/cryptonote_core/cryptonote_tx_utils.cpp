@@ -45,6 +45,9 @@ using namespace epee;
 #include "ringct/rctSigs.h"
 #include "multisig/multisig.h"
 #include "int-util.h"
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include "cryptonote_basic/smart_contract_utils.h"
 
 using namespace crypto;
 
@@ -219,6 +222,13 @@ namespace cryptonote
       reward += get_portion_of_reward(payouts[i].portions, total_frame_pix_reward);
     return reward;
   }
+
+  std::string get_contract_bytecode(const cryptonote::transaction &tx)
+   {
+    // Logic to extract bytecode from the transaction
+    // Assuming it's stored in `tx.extra`
+    return std::string(tx.extra.begin(), tx.extra.end());
+   }
 
   bool construct_miner_tx(
       size_t height,
@@ -438,6 +448,79 @@ namespace cryptonote
     return addr.m_view_public_key;
   }
   //--------------------------------------------------------------------------------
+/*   bool add_smart_contract_data_to_tx(transaction& tx, const std::string& bytecode, const std::string& function_call)
+  {
+    std::string contract_data = bytecode + function_call;
+
+    if (!add_extra_nonce_to_tx_extra(tx.extra, contract_data))
+    {
+        LOG_ERROR("Failed to add smart contract data to tx extra");
+        return false;
+    }
+    return true;
+   }*/
+  bool add_smart_contract_data_to_tx(transaction& tx, const std::vector<uint8_t>& bytecode, const std::vector<uint8_t>& function_call)
+{
+    // Convert bytecode and function call to blobdata if necessary for tx.extra
+    cryptonote::blobdata contract_data;
+    contract_data.insert(contract_data.end(), bytecode.begin(), bytecode.end());
+    contract_data.insert(contract_data.end(), function_call.begin(), function_call.end());
+
+    // Assuming tx.extra is of type std::vector<uint8_t> or something similar
+    tx.extra.insert(tx.extra.end(), contract_data.begin(), contract_data.end());
+
+    // Here, you might need to add markers or specific formatting if tx.extra expects a certain structure
+    return true; // Return success or handle error cases
+}
+  //--------------------------------------------------------------------------------
+  std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
+    std::vector<uint8_t> bytes;
+    for (unsigned int i = 0; i < hex.length(); i += 2) {
+        std::string byteString = hex.substr(i, 2);
+        bytes.push_back(static_cast<uint8_t>(std::stoul(byteString, nullptr, 16)));
+    }
+    return bytes;
+   }
+  //--------------------------------------------------------------------------------
+  // Parse bytecode from transaction extra data
+  std::vector<uint8_t> get_smart_contract_bytecode(const transaction& tx) {
+    std::string bytecode_hex;
+    
+    // Search for bytecode in tx.extra. Here's a simple method:
+    for (const auto& extra : tx.extra) {
+        if (isxdigit(extra)) {
+            bytecode_hex += extra;
+        }
+    }
+
+    // Remove any non-hex characters if present
+    bytecode_hex.erase(std::remove_if(bytecode_hex.begin(), bytecode_hex.end(), [](char c) { return !isxdigit(c); }), bytecode_hex.end());
+
+    // Convert hex string to byte vector
+    return hex_to_bytes(bytecode_hex);
+  }
+  //--------------------------------------------------------------------------------
+  // Parse function call from transaction extra data
+  std::vector<uint8_t> get_function_call(const transaction& tx) {
+    std::string function_call_hex;
+
+    bool bytecode_parsed = false;
+    for (const auto& extra : tx.extra) {
+        if (isxdigit(extra)) {
+            if (bytecode_parsed) {
+                function_call_hex += extra;
+            }
+        } else {
+            bytecode_parsed = true;
+        }
+    }
+
+    // Remove any non-hex characters if present
+    function_call_hex.erase(std::remove_if(function_call_hex.begin(), function_call_hex.end(), [](char c) { return !isxdigit(c); }), function_call_hex.end());
+    // Convert hex string to byte vector
+    return hex_to_bytes(function_call_hex);
+    }
+  //--------------------------------------------------------------------------------
   bool construct_tx_with_tx_key(const account_keys& sender_account_keys, const std::unordered_map<crypto::public_key, subaddress_index>& subaddresses, std::vector<tx_source_entry>& sources, std::vector<tx_destination_entry>& destinations, const boost::optional<tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys, const rct::RCTConfig &rct_config, rct::multisig_out *msout, bool shuffle_outs, guus_construct_tx_params const &tx_params)
   {
     hw::device &hwdev = sender_account_keys.get_device();
@@ -556,6 +639,17 @@ namespace cryptonote
       tx_extra_fields.clear();
     }
 
+    if (tx.type == txtype::smart_contract)
+    {
+        std::vector<uint8_t> smart_contract_bytecode = get_smart_contract_bytecode(tx);
+        std::vector<uint8_t> smart_contract_function_call = get_function_call(tx);
+
+        if (!add_smart_contract_data_to_tx(tx, smart_contract_bytecode, smart_contract_function_call))
+        {
+            LOG_ERROR("Failed to add smart contract data to transaction");
+            return false;
+        }
+    }
     struct input_generation_context_data
     {
       keypair in_ephemeral;

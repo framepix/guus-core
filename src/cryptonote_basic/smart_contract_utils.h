@@ -10,6 +10,7 @@ namespace cryptonote {
 struct smart_contract_data {
     std::string bytecode; // Smart contract bytecode
     std::vector<uint8_t> input_data; // Input data for contract execution
+    std::vector<uint8_t> function_call;
 };
 
 struct transaction_with_smart_contract : public transaction
@@ -30,5 +31,18 @@ struct transaction_with_smart_contract : public transaction
         FIELD(is_smart_contract) // Serialize the smart contract flag
     END_SERIALIZE()
 };
+
+/*std::vector<uint8_t> string_to_bytes(const std::string& str) {
+    return std::vector<uint8_t>(str.begin(), str.end());
+}*/
+/*
+std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
+    std::vector<uint8_t> bytes;
+    for (unsigned int i = 0; i < hex.length(); i += 2) {
+        std::string byteString = hex.substr(i, 2);
+        bytes.push_back(static_cast<uint8_t>(std::stoul(byteString, nullptr, 16)));
+    }
+    return bytes;
+}*/
 
 } // namespace cryptonote

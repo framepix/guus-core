@@ -51,13 +51,32 @@
 #include "cryptonote_basic/cryptonote_stat_info.h"
 #include "warnings.h"
 #include "crypto/hash.h"
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include <evmc/hex.hpp>
+#include <evmc/mocked_host.hpp>
+#include <evmc/tooling.hpp>
+#include <ostream>
+#include <memory>
+#include <cstring>
+
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)
 
 #include "common/guus_integration_test_hooks.h"
+
+
+ static constexpr uint64_t DEFAULT_GAS = 21000;
+ static constexpr uint64_t DEFAULT_GAS_PRICE = 1;
+
 namespace cryptonote
 {
   using namespace std::literals;
+
+class transaction;
+class block;
+struct tx_pool_options;
 
    struct test_options {
      std::vector<std::pair<uint8_t, uint64_t>> hard_forks;
@@ -109,7 +128,39 @@ namespace cryptonote
    class core: public i_miner_handler
    {
    public:
+    // New smart contract related functions
+    static bool is_smart_contract_tx(const transaction& tx);
+    static evmc_message tx_to_evm_message(const transaction& tx);
+    static evmc::Result execute_smart_contract(const transaction& tx, evmc::VM& vm, const evmc_host_interface& host, evmc_host_context* ctx);
+    static void update_smart_contract_state(const transaction& tx, const evmc::Result& result);
+    static uint64_t calculate_gas_for_tx(const transaction& tx);
+    static uint64_t get_input_amount(const txin_to_key& in);
+    evmc_host_interface initialize_host_interface();
+    void* create_host_context(); // Custom function to create context
+    void destroy_host_context(void* context);
+    evmc_storage_status set_storage(const evmc_address* addr, const evmc_bytes32* key, const evmc_bytes32* value);
+    evmc_uint256be get_balance(const evmc_address* addr);
+    size_t get_code_size(const evmc_address* addr);
+    evmc_bytes32 get_code_hash(const evmc_address* addr);
+    size_t copy_code(const evmc_address* addr, size_t code_offset, uint8_t* buffer_data, size_t buffer_size);
+    bool selfdestruct(const evmc_address* addr, const evmc_address* beneficiary);
+    evmc_result call(const evmc_message* msg);
+    evmc_tx_context get_tx_context();
+    static std::vector<uint8_t> extract_contract_code(const cryptonote::transaction &tx);
+    static evmc_revision determine_evm_revision(const cryptonote::transaction &tx);
+    static evmc_storage_status set_storage_cb(evmc_host_context* context, const evmc_address* address, const evmc_bytes32* key, const evmc_bytes32* value);
+    static size_t get_code_size_cb(evmc_host_context* context, const evmc_address* address);
+    static size_t copy_code_cb(evmc_host_context* context, const evmc_address* address, size_t code_offset, uint8_t* buffer_data, size_t buffer_size);
+    static evmc_result call_cb(evmc_host_context* context, const evmc_message* msg);
+    static evmc_uint256be get_balance_cb(evmc_host_context* context, const evmc_address* address);
+    static evmc_bytes32 get_code_hash_cb(evmc_host_context* context, const evmc_address* address);
+    static bool selfdestruct_cb(evmc_host_context* context, const evmc_address* address, const evmc_address* beneficiary);
+    static evmc_tx_context get_tx_context_cb(evmc_host_context* context);
+    static evmc_bytes32 get_block_hash_cb(evmc_host_context* context, int64_t block_number);
+    static bool account_exists_cb(evmc_host_context* context, const evmc_address* address);
+    static evmc_bytes32 get_storage_cb(evmc_host_context* context, const evmc_address* address, const evmc_bytes32* key);
 
+ //   evmc_bytes32 get_block_hash(int64_t number);
       /**
        * @brief constructor
        *
@@ -977,7 +1028,10 @@ namespace cryptonote
      std::mutex              m_long_poll_mutex;
      std::condition_variable m_long_poll_wake_up_clients;
  private:
-
+    // Non-static helper functions if needed
+    bool account_exists(const evmc_address* addr);
+    evmc_bytes32 get_storage(const evmc_address* addr, const evmc_bytes32* key);
+    //static evmc_host_interface initialize_host_interface();
      /**
       * @copydoc Blockchain::add_new_block
       *
@@ -1178,6 +1232,14 @@ namespace cryptonote
      std::shared_ptr<tools::Notify> m_block_rate_notify;
 
    };
+extern "C" {
+    int account_exists(evmc_host_context* ctx, const evmc_address* addr);
+    evmc_bytes32 get_storage(evmc_host_context* ctx, const evmc_address* addr, const evmc_bytes32* key);
+    evmc_storage_status set_storage(evmc_host_context* ctx, const evmc_address* addr, const evmc_bytes32* key, const evmc_bytes32* value);
+    size_t get_code_size(evmc_host_context* ctx, const evmc_address* addr);
+    size_t copy_code(evmc_host_context* ctx, const evmc_address* addr, size_t code_offset, uint8_t* buffer_data, size_t buffer_size);
+    evmc_bytes32 get_block_hash(evmc_host_context* ctx, int64_t number);
+}
 }
 
 POP_WARNINGS

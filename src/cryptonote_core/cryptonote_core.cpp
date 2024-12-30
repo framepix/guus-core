@@ -68,8 +68,12 @@ extern "C" {
 #include "common/i18n.h"
 #include "net/local_ip.h"
 #include "cryptonote_protocol/quorumnet.h"
-
 #include "common/guus_integration_test_hooks.h"
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include <memory>
+#include <cstring>
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "cn"
@@ -82,6 +86,8 @@ DISABLE_VS_WARNINGS(4355)
 
 // basically at least how many bytes the block itself serializes to without the miner tx
 #define BLOCK_SIZE_SANITY_LEEWAY 100
+
+static const std::string smart_contract_marker = "SMART_CONTRACT";
 
 namespace cryptonote
 {
@@ -1247,14 +1253,295 @@ namespace cryptonote
     return ok;
   }
   //-----------------------------------------------------------------------------------------------
-  std::vector<core::tx_verification_batch_info> core::handle_incoming_txs(const std::vector<blobdata>& tx_blobs, const tx_pool_options &opts)
+  bool core::is_smart_contract_tx(const transaction& tx)
   {
+    if (tx.extra.empty()) {
+        return false; // No extra data, can't be a smart contract tx
+    }
+
+    // Convert the marker to vector for comparison
+    std::vector<uint8_t> marker(smart_contract_marker.begin(), smart_contract_marker.end());
+
+    // Use std::search to find the marker in tx.extra
+    auto it = std::search(tx.extra.begin(), tx.extra.end(), 
+                          marker.begin(), marker.end());
+
+    return it != tx.extra.end();
+  }
+  //----------------------------------------------------------------------------------------------
+  // Convert Guus transaction to EVM message
+  evmc_message core::tx_to_evm_message(const transaction& tx)
+  {
+    evmc_message msg = {};
+    memset(&msg, 0, sizeof(evmc_message));
+
+    // Set message kind - for simplicity, we assume this is a regular call
+    msg.kind = EVMC_CALL;
+
+    // Set flags - static calls are not applicable for standard transactions
+    msg.flags = 0;
+
+    // Depth - this would be set by the caller, assuming this is not a nested call
+    msg.depth = 0; // For a top-level transaction
+
+    msg.gas = calculate_gas_for_tx(tx); 
+
+    // Recipient - assuming the first output's address is the recipient
+    if (!tx.vout.empty()) {
+        memcpy(&msg.recipient, &tx.vout[0].target, sizeof(msg.recipient));
+    }
+
+    // Sender - assuming the first input's key image can represent the sender
+    if (tx.vin.size() > 0) {
+        if (const auto* tokey_in = boost::get<txin_to_key>(&tx.vin[0])) {
+            memcpy(&msg.sender, &tokey_in->k_image, sizeof(msg.sender));
+        }
+    }
+
+    if (!tx.extra.empty()) {
+        msg.input_data = tx.extra.data();
+        msg.input_size = tx.extra.size();
+    }
+
+    uint64_t total_output_amount = 0;
+    for (const auto& out : tx.vout) {
+        total_output_amount += out.amount;
+    }
+
+    // Convert to 256-bit big-endian for value transfer
+    memset(&msg.value, 0, sizeof(msg.value));
+    for (int i = 0; i < sizeof(total_output_amount); ++i) {
+        msg.value.bytes[sizeof(msg.value.bytes) - 1 - i] = static_cast<uint8_t>(total_output_amount >> (i * 8));
+    }
+
+    // create2_salt - not used for regular transactions
+    memset(&msg.create2_salt, 0, sizeof(msg.create2_salt));
+
+    // code_address - not applicable for regular transactions, so zero it out
+    memset(&msg.code_address, 0, sizeof(msg.code_address));
+
+    // code - no code for regular transactions, so:
+    msg.code = nullptr;
+    msg.code_size = 0;
+
+    return msg;
+   }
+//-----------------------------------------------------------------------------------------------------
+// Calculate gas
+uint64_t core::calculate_gas_for_tx(const transaction& tx)
+{
+    return DEFAULT_GAS; // Default gas value for now
+}
+//-------------------------------------------------------------------------------------------------------
+// Get input amount.
+uint64_t core::get_input_amount(const txin_to_key& in)
+{
+    return 0; // implement properly
+}
+//-----------------------------------------------------------------------------------------------------
+// Execute smart contract
+std::vector<uint8_t> core::extract_contract_code(const cryptonote::transaction &tx)
+{
+    // Assume bytecode is stored in tx.extra
+    if (tx.extra.empty()) {
+        return {}; // Return empty if no bytecode found
+    }
+    return std::vector<uint8_t>(tx.extra.begin(), tx.extra.end());
+}
+//-------------------------------------------------------------------------------------
+evmc_revision core::determine_evm_revision(const cryptonote::transaction &tx)
+{
+    return EVMC_CONSTANTINOPLE; // Default revision
+}
+
+evmc::Result core::execute_smart_contract(const transaction& tx, evmc::VM& vm, const evmc_host_interface& host, evmc_host_context* ctx)
+{
+    evmc_message msg = tx_to_evm_message(tx);
+    msg.gas = 1000000;
+    std::vector<uint8_t> contract_code = core::extract_contract_code(tx);
+    if (contract_code.empty()) {
+        MERROR("Contract code is empty for transaction: " << get_transaction_hash(tx));
+        return evmc::Result(EVMC_FAILURE, 0, 0, nullptr, 0);
+    }
+
+    evmc_revision rev = core::determine_evm_revision(tx);
+
+    try {
+        evmc::Result result = vm.execute(host, ctx, rev, msg, contract_code.data(), contract_code.size());
+
+        if (result.status_code == EVMC_SUCCESS) {
+            MINFO("Smart contract executed successfully. Gas used: " << result.gas_left);
+        } else {
+            MINFO("Smart contract execution failed with status: " << result.status_code);
+        }
+
+        return result;
+    } catch (const std::exception& e) {
+        MERROR("Exception during smart contract execution: " << e.what());
+        return evmc::Result(EVMC_INTERNAL_ERROR, 0, 0, nullptr, 0);
+    }
+}
+//---------------------------------------------------------------------------------------------------------
+
+// Update blockchain state after smart contract execution
+void core::update_smart_contract_state(const transaction& tx, const evmc::Result& result)
+{
+
+}
+  //-----------------------------------------------------------------------------------------------
+  std::vector<core::tx_verification_batch_info> core::handle_incoming_txs(const std::vector<blobdata>& tx_blobs, const tx_pool_options &opts)
+{
     auto lock = incoming_tx_lock();
     auto parsed = parse_incoming_txs(tx_blobs, opts);
+    for (auto& info : parsed) {
+        if (info.result && is_smart_contract_tx(info.tx)) {
+            evmc::VM vm(evmc_create_evmone());
+            evmc_host_interface host = initialize_host_interface();
+
+            void* context = create_host_context();
+            std::unique_ptr<void, std::function<void(void*)>> context_guard(
+                context,
+                [this](void* ptr) { this->destroy_host_context(ptr); }
+            );
+
+            evmc::Result execution_result = execute_smart_contract(info.tx, vm, host, static_cast<evmc_host_context*>(context));
+            if (execution_result.status_code != EVMC_SUCCESS) {
+                MERROR("Smart contract execution failed for tx " << get_transaction_hash(info.tx) << " with status code: " << static_cast<int>(execution_result.status_code));
+                info.tvc.m_verifivation_failed = true;
+                info.result = false;
+            } else {
+                update_smart_contract_state(info.tx, execution_result);
+            }
+        }
+    }
     handle_parsed_txs(parsed, opts);
     return parsed;
-  }
+}
   //-----------------------------------------------------------------------------------------------
+evmc_storage_status core::set_storage_cb(evmc_host_context* context, const evmc_address* address, const evmc_bytes32* key, const evmc_bytes32* value) {
+    evmc_bytes32 original_value = {};
+    evmc_bytes32 current_value = {};
+
+    // Check if the value is unchanged or being modified:
+    if (memcmp(&current_value, value, sizeof(evmc_bytes32)) == 0) {
+        // If the new value is the same as the current value
+        return EVMC_STORAGE_ASSIGNED; // No actual change in value
+    } else if (memcmp(&original_value, &current_value, sizeof(evmc_bytes32)) == 0 && memcmp(&original_value, value, sizeof(evmc_bytes32)) != 0) {
+        // If the current value is the original value, but we're setting a new value
+        return EVMC_STORAGE_ADDED; // New storage item added (0 -> 0 -> Z)
+    } else if (memcmp(&current_value, value, sizeof(evmc_bytes32)) != 0) {
+        // If we're modifying from a non-zero value to another non-zero value
+        return EVMC_STORAGE_MODIFIED; // General modification case
+    } else if (memcmp(&current_value, value, sizeof(evmc_bytes32)) == 0 && memcmp(&original_value, &current_value, sizeof(evmc_bytes32)) != 0) {
+        // If setting back to the original value after a change
+        return EVMC_STORAGE_DELETED; // X -> X -> 0 where X is not zero
+    }
+
+    // There are more nuanced cases, but this covers basic scenarios:
+    // For more specific cases like DELETED_ADDED, MODIFIED_DELETED.
+
+    // Default case, which should not be reached in a well-defined operation:
+    return EVMC_STORAGE_ASSIGNED;
+}
+
+size_t core::get_code_size_cb(evmc_host_context* context, const evmc_address* address) {
+    // Get contract code size
+    return 0;
+}
+
+size_t core::copy_code_cb(evmc_host_context* context, const evmc_address* address, size_t code_offset, uint8_t* buffer_data, size_t buffer_size) {
+    // Copy contract code
+    return 0;
+}
+
+evmc_result core::call_cb(evmc_host_context* context, const evmc_message* msg) {
+    // Contract call
+    evmc_result result = {};
+    result.status_code = EVMC_FAILURE;
+    return result;
+}
+
+evmc_uint256be core::get_balance_cb(evmc_host_context* context, const evmc_address* address) {
+    // Get balance
+    evmc_uint256be balance = {};
+    return balance;
+}
+
+evmc_bytes32 core::get_code_hash_cb(evmc_host_context* context, const evmc_address* address) {
+    // Get code hash
+    evmc_bytes32 hash = {};
+    return hash;
+}
+
+// Correct the return type from void to bool for selfdestruct_cb
+bool core::selfdestruct_cb(evmc_host_context* context, const evmc_address* address, const evmc_address* beneficiary) {
+    // Contract self-destruct
+    // Return true if the self-destruct was successful, false otherwise
+    return true;
+}
+
+evmc_tx_context core::get_tx_context_cb(evmc_host_context* context) {
+    // Get transaction context
+    evmc_tx_context ctx = {};
+    return ctx;
+}
+
+evmc_bytes32 core::get_block_hash_cb(evmc_host_context* context, int64_t block_number) {
+    // Get block hash
+    evmc_bytes32 hash = {};
+    return hash;
+}
+
+  //-----------------------------------------------------------------------------------------------
+evmc_host_interface core::initialize_host_interface()
+{
+    evmc_host_interface host = {};
+    host.account_exists = &core::account_exists_cb;
+    host.get_storage = &core::get_storage_cb;
+    host.set_storage = &core::set_storage_cb;
+    host.get_balance = &core::get_balance_cb;
+    host.get_code_size = &core::get_code_size_cb;
+    host.get_code_hash = &core::get_code_hash_cb;
+    host.copy_code = &core::copy_code_cb;
+    host.selfdestruct = &core::selfdestruct_cb;
+    host.call = &core::call_cb;
+    host.get_tx_context = &core::get_tx_context_cb;
+    host.get_block_hash = &core::get_block_hash_cb;
+
+    return host;
+}
+//-------------------------------------------------------------------------------------------------
+bool core::account_exists_cb(evmc_host_context* context, const evmc_address* addr)
+{
+        core* self = reinterpret_cast<core*>(context);
+    return self->account_exists(addr);
+}
+
+evmc_bytes32 core::get_storage_cb(evmc_host_context* context, const evmc_address* addr, const evmc_bytes32* key)
+{
+    core* self = reinterpret_cast<core*>(context);
+    return self->get_storage(addr, key);
+}
+
+bool core::account_exists(const evmc_address* addr)
+{
+    return false;
+}
+
+evmc_bytes32 core::get_storage(const evmc_address* addr, const evmc_bytes32* key)
+{
+    // Getting storage value
+    return {};
+}
+//---------------------------------------------------------------------------------------------------
+void* core::create_host_context() {
+    return new char[sizeof(void*)];
+}
+
+void core::destroy_host_context(void* context) {
+    // Delete the memory allocated for the context
+    delete[] static_cast<char*>(context);
+}
   bool core::handle_incoming_tx(const blobdata& tx_blob, tx_verification_context& tvc, const tx_pool_options &opts)
   {
     const std::vector<cryptonote::blobdata> tx_blobs{{tx_blob}};
@@ -1810,13 +2097,14 @@ namespace cryptonote
       std::vector<cryptonote::blobdata> txs;
       m_blockchain_storage.get_transactions_blobs(b.tx_hashes, txs, missed_txs);
       if(missed_txs.size() &&  m_blockchain_storage.get_block_id_by_height(get_block_height(b)) != get_block_hash(b))
+     //if(missed_txs.size() &&  m_blockchain_storage.get_block_id_by_height(get_block_height(b)) != get_block_hash(get_block_height(b)))
       {
         LOG_PRINT_L1("Block found but, seems that reorganize just happened after that, do not relay this block");
         return true;
       }
       CHECK_AND_ASSERT_MES(txs.size() == b.tx_hashes.size() && !missed_txs.size(), false, "can't find some transactions in found block:" << get_block_hash(b) << " txs.size()=" << txs.size()
         << ", b.tx_hashes.size()=" << b.tx_hashes.size() << ", missed_txs.size()" << missed_txs.size());
-
+    //CHECK_AND_ASSERT_MES(txs.size() == b.tx_hashes.size() && !missed_txs.size(), false, "can't find some transactions in found block:" << get_block_hash(get_block_height(b)) << " txs.size()=" << txs.size();
       cryptonote_connection_context exclude_context{};
       NOTIFY_NEW_FLUFFY_BLOCK::request arg{};
       arg.current_blockchain_height                 = m_blockchain_storage.get_current_blockchain_height();

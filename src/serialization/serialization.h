@@ -51,6 +51,10 @@
 #include <boost/type_traits/is_integral.hpp>
 #include <boost/type_traits/integral_constant.hpp>
 
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+
 /*! \struct is_blob_type 
  *
  * \brief a descriptor for dispatching serialize
@@ -65,6 +69,19 @@ struct is_blob_type { typedef boost::false_type type; };
 template <class T>
 struct has_free_serializer { typedef boost::true_type type; };
 
+template <class Archive>
+bool do_serialize(Archive &ar, evmc_address &v)
+{
+    ar.serialize_blob(&v, sizeof(v));
+    return ar.stream().good();
+}
+
+template <class Archive>
+bool do_serialize(Archive &ar, evmc_bytes32 &v)
+{
+    ar.serialize_blob(&v, sizeof(v));
+    return ar.stream().good();
+}
 /*! \struct is_basic_type
  *
  * \brief a descriptor for dispatching serialize

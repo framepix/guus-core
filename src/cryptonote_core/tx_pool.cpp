@@ -39,6 +39,7 @@
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "cryptonote_core/frame_pix_list.h"
 #include "cryptonote_config.h"
+#include "cryptonote_tx_utils.h"
 #include "blockchain.h"
 #include "blockchain_db/blockchain_db.h"
 #include "common/boost_serialization_helper.h"
@@ -48,6 +49,11 @@
 #include "warnings.h"
 #include "common/perf_timer.h"
 #include "crypto/hash.h"
+#include <evmc/loader.h>
+#include <evmc/evmc.h>
+#include <evmc/evmc.hpp>
+#include "cryptonote_core/evm_host.h"
+#include "cryptonote_core.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "txpool"
@@ -257,7 +263,59 @@ namespace cryptonote
 
     return false;
   }
+  //---------------------------------------------------------------------------------------
+  bool execute_smart_contract(const std::string& bytecode, const std::vector<uint8_t>& input_data,
+                             Blockchain& blockchain, const transaction& current_tx) {
+    try {
+        // Create the EVMC VM instance
+        auto vm = evmc::VM{evmc_create_evmone()};
 
+        // Define the host interface
+        evmc_host_interface host = {};
+        host.account_exists = cryptonote::monero_account_exists;
+        host.get_balance = cryptonote::monero_get_balance;
+        host.set_storage = cryptonote::monero_set_storage;
+
+        // Create and initialize the host context
+        cryptonote::MoneroHostContext host_context(&blockchain, &current_tx);
+
+        // Prepare the smart contract bytecode and input
+        const uint8_t* bytecode_data = reinterpret_cast<const uint8_t*>(bytecode.data());
+        size_t bytecode_size = bytecode.size();
+
+        // Initialize the message for the smart contract call
+        evmc_message msg = {};
+        msg.kind = EVMC_CALL;
+        msg.flags = 0; // No special flags
+        msg.depth = 0; // Top-level call
+        msg.gas = 1000000; // Initial gas limit
+        msg.input_data = input_data.data();
+        msg.input_size = input_data.size();
+
+        // Specify the Ethereum revision to use
+        evmc_revision rev = EVMC_CONSTANTINOPLE;
+
+        // Execute the smart contract
+        evmc::Result result = vm.execute(host, reinterpret_cast<evmc_host_context*>(&host_context), rev, msg,
+                                         bytecode_data, bytecode_size);
+
+        // Check the execution result
+        if (result.status_code == EVMC_SUCCESS) {
+            MINFO("Contract executed successfully. Gas used: " << (msg.gas - result.gas_left));
+            return true;
+        } else {
+            MERROR("Contract execution failed with status: " << result.status_code);
+            return false;
+        }
+    } catch (const std::exception& e) {
+        MERROR("Exception during smart contract execution: " << e.what());
+        return false;
+    } catch (...) {
+        MERROR("Unknown exception during smart contract execution.");
+        return false;
+     }
+   }
+  //---------------------------------------------------------------------------------------
   // Blink notes: a blink quorum member adds an incoming blink tx into the mempool to make sure it
   // can be accepted, but sets it as do_not_relay initially.  If it gets added, the quorum member
   // sends a signature to other quorum members.  Once enough signatures are received it updates it
@@ -325,6 +383,32 @@ namespace cryptonote
     }
 
     size_t tx_extra_size = tx.extra.size();
+/*if (tx.version >= txversion::v6_tx_types)
+{
+    // Retrieve the contract bytecode from the transaction and convert it to std::vector<uint8_t>
+    const std::string raw_bytecode = get_contract_bytecode(tx);
+    const std::vector<uint8_t> contract_bytecode(raw_bytecode.begin(), raw_bytecode.end());
+
+    // Prepare the input data for the smart contract execution (modify as needed)
+    std::vector<uint8_t> input_data; // Extract or define the input data for the contract
+
+    // Execute the smart contract
+    Blockchain* blockchain;// = &m_blockchain_storage; // Ensure you pass the correct blockchain instance
+    const cryptonote::transaction& current_tx = tx; // Pass the current transaction
+    
+    bool success = cryptonote::execute_smart_contract(contract_bytecode, input_data, blockchain, current_tx);
+
+    if (!success)
+    {
+        MERROR("Smart contract execution failed");
+        return false; // Reject the transaction
+    }
+
+    MINFO("Smart contract executed successfully");
+    }
+*/
+
+
     if (tx_extra_size > MAX_TX_EXTRA_SIZE)
     {
       LOG_PRINT_L1("transaction tx-extra is too big: " << tx_extra_size << " bytes, the limit is: " << MAX_TX_EXTRA_SIZE);
@@ -913,6 +997,30 @@ namespace cryptonote
     auto locks = tools::unique_locks(m_transactions_lock, m_blockchain);
 
     auto sorted_it = find_tx_in_sorted_container(id);
+
+   /*if (tx.version >= txversion::v6_tx_types)
+   {
+    // Retrieve the contract bytecode from the transaction
+    const std::vector<uint8_t> contract_bytecode = get_contract_bytecode(tx);
+
+    // Prepare the input data for the smart contract execution (modify as needed)
+    std::vector<uint8_t> input_data; // Extract or define the input data for the contract
+
+    // Execute the smart contract
+    Blockchain* blockchain = &m_blockchain_storage; // Ensure you pass the correct blockchain instance
+    const cryptonote::transaction& current_tx = tx; // Pass the current transaction
+    
+    bool success = cryptonote::execute_smart_contract(contract_bytecode, input_data, blockchain, current_tx);
+
+    if (!success)
+    {
+        MERROR("Smart contract execution failed");
+        return false; // Reject the transaction
+    }
+
+    MINFO("Smart contract executed successfully");
+    }
+*/
 
     try
     {
