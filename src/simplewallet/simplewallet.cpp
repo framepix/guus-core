@@ -1381,87 +1381,59 @@ evmc_host_interface simple_wallet::initialize_host_interface()
 //-----------------------------------------------------------------------------
 bool simple_wallet::deploy_smart_contract(const std::vector<std::string>& args)
 {
-    if (args.size() < 2) {
-        PRINT_USAGE("deploy_smart_contract <bytecode_file> <gas_limit> [<value>]");
+    if (args.size() != 3)
+    {
+        fail_msg_writer() << "Usage: deploy_smart_contract <bytecode.bin> <gas_limit> <gas_price>";
         return true;
     }
 
-    const std::string bytecode_file = args[0];
+    std::string bytecode_file = args[0];
     uint64_t gas_limit;
-    if (!epee::string_tools::get_xtype_from_string(gas_limit, args[1])) {
-        fail_msg_writer() << tr("Invalid gas limit specified: ") << args[1];
+    uint64_t gas_price;
+
+    try
+    {
+        gas_limit = boost::lexical_cast<uint64_t>(args[1]);
+        gas_price = boost::lexical_cast<uint64_t>(args[2]);
+    }
+    catch (const boost::bad_lexical_cast&)
+    {
+        fail_msg_writer() << "Invalid gas limit or gas price. Both must be positive integers.";
         return true;
     }
 
-    uint64_t value = 0;
-    if (args.size() > 2 && !cryptonote::parse_amount(value, args[2])) {
-        fail_msg_writer() << tr("Invalid value amount specified: ") << args[2];
+    // Read the bytecode from the file
+    std::ifstream file(bytecode_file, std::ios::binary);
+    if (!file)
+    {
+        fail_msg_writer() << "Failed to open bytecode file: " << bytecode_file;
         return true;
     }
 
-    std::string bytecode;
-    if (!epee::file_io_utils::load_file_to_string(bytecode_file, bytecode)) {
-        fail_msg_writer() << tr("Failed to read bytecode file: ") << bytecode_file;
+    std::vector<uint8_t> bytecode((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    if (bytecode.empty())
+    {
+        fail_msg_writer() << "Bytecode file is empty.";
         return true;
     }
-    if (bytecode.empty()) {
-        fail_msg_writer() << tr("Bytecode is empty, deployment aborted");
-        return true;
+
+    // Validate and deploy the smart contract
+    try
+    {
+        cryptonote::transaction tx = m_wallet->create_smart_contract_deployment(bytecode, gas_limit, gas_price);
+        success_msg_writer() << "Smart contract deployment transaction created: " << get_transaction_hash(tx);
     }
-
-    try {
-        SCOPED_WALLET_UNLOCK();
-
-        // Convert string to byte vector for EVM execution
-        std::vector<uint8_t> contract_bytecode(bytecode.begin(), bytecode.end());
-
-        // Prepare EVM message
-        evmc_message msg = {};
-        msg.kind = EVMC_CREATE;
-        msg.gas = gas_limit;
-        evmc_uint256be uint256_value;
-        memcpy(uint256_value.bytes + 24, &value, sizeof(uint64_t));
-        msg.value = uint256_value;
-        msg.input_data = contract_bytecode.data();
-        msg.input_size = contract_bytecode.size();
-
-        // Create EVM instance using the VM wrapper
-        evmc::VM vm(evmc_create_evmone());
-        
-        // Set up the execution context using wallet2's method
-        evmc_host_context* context = m_wallet->create_evm_context();
-        if (!context) {
-            throw std::runtime_error(tr("Failed to create EVM context"));
-        }
-
-        // Initialize host interface - assuming you have a way to get this
-        evmc_host_interface host_interface =  initialize_host_interface();
-        evmc::Result result = vm.execute(host_interface, context, EVMC_SHANGHAI, msg, contract_bytecode.data(), contract_bytecode.size());
-
-        if (result.status_code == EVMC_SUCCESS) {
-            success_msg_writer() << tr("Smart contract deployed successfully. Address: ")
-                                 << epee::string_tools::pod_to_hex(result.create_address.bytes)
-                                 << tr(", Gas used: ") << gas_limit - result.gas_left;
-            // Here you might want to save the contract address or state for future reference
-            m_wallet->destroy_evm_context(context);
-        } else {
-            fail_msg_writer() << tr("Smart contract deployment failed with status: ")
-                              << result.status_code;
-            m_wallet->destroy_evm_context(context);
-            return true;
-        }
-
-
-    } catch (const std::exception& e) {
-        fail_msg_writer() << tr("Exception during smart contract deployment: ") << e.what();
-        return true;
-    } catch (...) {
-        fail_msg_writer() << tr("Unknown error occurred during smart contract deployment");
+    catch (const std::exception& e)
+    {
+        fail_msg_writer() << "Failed to create transaction: " << e.what();
         return true;
     }
 
     return true;
 }
+
 //-------------------------------------------------------------------------------------------
 bool simple_wallet::accept_loaded_tx(const tools::wallet2::multisig_tx_set &txs)
 {

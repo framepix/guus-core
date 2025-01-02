@@ -30,16 +30,18 @@
 
 #pragma once
 
+
 #include "serialization/serialization.h"
 #include "serialization/binary_archive.h"
 #include "serialization/variant.h"
 #include "crypto/crypto.h"
-#include <boost/variant.hpp>
+//#include <boost/variant.hpp>
 #include "lns.h"
 #include "cryptonote_basic.h"
 #include <evmc/loader.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
+#include "serialization/variant.h"
 
 #define TX_EXTRA_PADDING_MAX_COUNT              255
 #define TX_EXTRA_NONCE_MAX_COUNT                255
@@ -63,6 +65,8 @@
 
 #define TX_EXTRA_TAG_EVM_BYTECODE             0x80
 #define TX_EXTRA_TAG_EVM_CONTEXT              0x81
+#define TX_EXTRA_TAG_SMART_CONTRACT_DATA      0x82
+#define TX_EXTRA_TAGGED_FIELD                 0x83
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG       0xDE
 
 #define TX_EXTRA_NONCE_PAYMENT_ID               0x00
@@ -582,11 +586,42 @@ namespace cryptonote
         END_SERIALIZE()
     };
 
+   struct tx_extra_smart_contract_data {
+    std::vector<uint8_t> bytecode; // The smart contract bytecode
+    uint64_t gas_limit;           // The maximum gas limit for execution
+    uint64_t gas_price;           // The price of gas in cryptocurrency units
+
+    BEGIN_SERIALIZE()
+        FIELD(bytecode)
+        FIELD(gas_limit)
+        FIELD(gas_price)
+    END_SERIALIZE()
+   };
+
+// Define tx_extra_tagged_field for storing tagged smart contract data
+struct tx_extra_tagged_field {
+    uint8_t tag;   // Tag to identify the field type
+    tx_extra_smart_contract_data data;  // The smart contract data structure
+
+    BEGIN_SERIALIZE()
+        FIELD(tag)
+        FIELD(data)  // This will serialize the tx_extra_smart_contract_data structure
+    END_SERIALIZE()
+};
+
+// Function to add smart contract data to tx_extra
+bool add_tx_extra_smart_contract_data(std::vector<uint8_t>& extra, const tx_extra_smart_contract_data& sc_data);
+
+// Function to parse smart contract data from tx_extra
+bool parse_tx_extra_smart_contract_data(const std::vector<uint8_t>& extra, tx_extra_smart_contract_data& sc_data);
+
+
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;
   //   varint size;
   //   varint data[];
-  typedef boost::variant<tx_extra_padding,
+  //typedef boost::variant<tx_extra_padding,
+   using tx_extra_field = std::variant<tx_extra_padding,
                          tx_extra_pub_key,
                          tx_extra_nonce,
                          tx_extra_merge_mining_tag,
@@ -604,8 +639,10 @@ namespace cryptonote
                          tx_extra_burn,
                          tx_extra_guus_name_system,
                          tx_extra_evm_bytecode,  // New EVM bytecode field
-                         tx_extra_evm_context     // New EVM context field
-                        > tx_extra_field;
+                         tx_extra_evm_context,     // New EVM context field
+                         tx_extra_smart_contract_data,
+                         tx_extra_tagged_field
+                        >;
 }
 
 BLOB_SERIALIZER(cryptonote::tx_extra_frame_pix_deregister_old::vote);
@@ -630,4 +667,5 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_burn,                        TX
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_guus_name_system,            TX_EXTRA_TAG_GUUS_NAME_SYSTEM);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_evm_bytecode,                TX_EXTRA_TAG_EVM_BYTECODE);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_evm_context,                 TX_EXTRA_TAG_EVM_CONTEXT);
-
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_smart_contract_data,         TX_EXTRA_TAG_SMART_CONTRACT_DATA);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_tagged_field,                TX_EXTRA_TAGGED_FIELD);

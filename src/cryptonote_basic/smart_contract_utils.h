@@ -4,9 +4,22 @@
 #include <vector>
 #include <string>
 
+// If BASE_FIELDS isn't defined in your include files, define it here:
+#ifndef BASE_FIELDS
+#define BASE_FIELDS(T) FIELDS(static_cast<T&>(*this))
+#endif
+
+// If FIELDS isn't defined, define it here:
+#ifndef FIELDS
+#define FIELDS(f)							\
+  do {									\
+    bool r = ::do_serialize(ar, f);					\
+    if (!r || !ar.stream().good()) return false;			\
+  } while(0);
+#endif
+
 namespace cryptonote {
 
-// Define a new structure for smart contract data
 struct smart_contract_data {
     std::string bytecode; // Smart contract bytecode
     std::vector<uint8_t> input_data; // Input data for contract execution
@@ -20,7 +33,7 @@ struct transaction_with_smart_contract : public transaction
 
     // Default constructor initializing is_smart_contract to false
     transaction_with_smart_contract() : is_smart_contract(false) {}
-    
+
     // Constructor from existing transaction
     transaction_with_smart_contract(const transaction& t) : transaction(t), is_smart_contract(false) {}
 
@@ -28,21 +41,8 @@ struct transaction_with_smart_contract : public transaction
     BEGIN_SERIALIZE_OBJECT()
         BASE_FIELDS(transaction) // Serialize base class fields first
         FIELD(contract_data)     // Serialize the smart contract data
-        FIELD(is_smart_contract) // Serialize the smart contract flag
+        FIELD(is_smart_contract) // Serialize the smart contract flag       
     END_SERIALIZE()
 };
 
-/*std::vector<uint8_t> string_to_bytes(const std::string& str) {
-    return std::vector<uint8_t>(str.begin(), str.end());
-}*/
-/*
-std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
-    std::vector<uint8_t> bytes;
-    for (unsigned int i = 0; i < hex.length(); i += 2) {
-        std::string byteString = hex.substr(i, 2);
-        bytes.push_back(static_cast<uint8_t>(std::stoul(byteString, nullptr, 16)));
-    }
-    return bytes;
-}*/
-
-} // namespace cryptonote
+}

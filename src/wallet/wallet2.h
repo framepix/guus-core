@@ -68,7 +68,6 @@
 
 #include "common/guus_integration_test_hooks.h"
 
-
 #include <evmc/loader.h>
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
@@ -335,7 +334,12 @@ private:
     friend class wallet_keys_unlocker;
     friend class wallet_device_callback;
   public:
-    evmc_result execute_evm(const std::vector<uint8_t>& bytecode, const evmc_message& msg);
+    uint64_t calculate_gas_fee(uint64_t gas_limit, uint64_t gas_price);
+    // Function to create a transaction for smart contract deployment
+    cryptonote::transaction create_smart_contract_deployment(
+        const std::vector<uint8_t>& bytecode, 
+        uint64_t gas_limit, 
+        uint64_t gas_price);
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
     enum RefreshType {
       RefreshFull,

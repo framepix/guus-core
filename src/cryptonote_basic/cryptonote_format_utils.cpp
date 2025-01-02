@@ -30,6 +30,7 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include <atomic>
+#include <variant>
 #include <boost/algorithm/string.hpp>
 #include "wipeable_string.h"
 #include "string_tools.h"
@@ -287,6 +288,33 @@ namespace cryptonote
     return true;
   }
   //---------------------------------------------------------------
+  // Function to add raw data (blob) to tx_extra
+   bool add_tx_extra_blob(std::vector<uint8_t>& extra, const std::string& serialized_data) {
+    try {
+        std::vector<uint8_t> data(serialized_data.begin(), serialized_data.end());
+        extra.insert(extra.end(), data.begin(), data.end());
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to add blob to tx_extra: " << e.what());
+        return false;
+    }
+   }
+  //---------------------------------------------------------------
+  bool add_tx_extra_smart_contract_data(std::vector<uint8_t>& extra, const tx_extra_smart_contract_data& sc_data) {
+    try {
+        tx_extra_tagged_field tagged_field;
+        tagged_field.tag = TX_EXTRA_TAG_SMART_CONTRACT_DATA;  // Define the tag for smart contract data
+        tagged_field.data = sc_data;  // Store the smart contract data in the tagged field
+
+        // Serialize the tagged field and add it to the extra vector
+        std::string serialized_data = t_serializable_object_to_blob(tagged_field);
+        return add_tx_extra_blob(extra, serialized_data);  // Assuming add_tx_extra_blob is implemented correctly
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to add smart contract data to tx_extra: " << e.what());
+        return false;
+    }
+  }
+  //----------------------------------------------------------------
   // Implementation of new transaction parsing for smart contracts
   bool parse_and_validate_tx_with_smart_contract(const blobdata& tx_blob, transaction_with_smart_contract& tx) {
     // Parse regular transaction
@@ -586,34 +614,67 @@ bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
     return r;
   }
   //---------------------------------------------------------------
-  bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields)
-  {
+  bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields) {
     tx_extra_fields.clear();
 
-    if(tx_extra.empty())
-      return true;
+    if (tx_extra.empty())
+        return true;
 
     BINARY_ARCHIVE_STREAM(iss, tx_extra);
     binary_archive<false> ar(iss);
 
     bool eof = false;
-    while (!eof)
-    {
-      tx_extra_field field;
-      bool r = ::do_serialize(ar, field);
-      CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
-      tx_extra_fields.push_back(field);
+    while (!eof) {
+        tx_extra_field field;
+        bool r = ::do_serialize(ar, field);
+        CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
+        tx_extra_fields.push_back(field);
 
-      std::ios_base::iostate state = iss.rdstate();
-      eof = (EOF == iss.peek());
-      iss.clear(state);
+        std::ios_base::iostate state = iss.rdstate();
+        eof = (EOF == iss.peek());
+        iss.clear(state);
     }
+
     CHECK_AND_NO_ASSERT_MES_L1(::serialization::check_stream_state(ar), false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
 
+    // Now handle the smart contract data
+   for (auto& field : tx_extra_fields) {
+    if (std::holds_alternative<tx_extra_tagged_field>(field)) {
+        const tx_extra_tagged_field& extra_tag = std::get<tx_extra_tagged_field>(field);
+        // This is where you can access the smart contract data
+        const auto& smart_contract_data = extra_tag.data;
+        // You can now use smart_contract_data.bytecode, smart_contract_data.gas_limit, and smart_contract_data.gas_price
+        LOG_PRINT_L1("Smart contract data found: bytecode size = " << smart_contract_data.bytecode.size()
+                      << ", gas limit = " << smart_contract_data.gas_limit
+                      << ", gas price = " << smart_contract_data.gas_price);
+       }
+    }
+
     return true;
+   }
+  //--------------------------------------------------------------
+  bool parse_tx_extra_smart_contract_data(const std::vector<uint8_t>& extra, tx_extra_smart_contract_data& sc_data) {
+    try {
+        if (extra.empty() || extra[0] != TX_EXTRA_TAG_SMART_CONTRACT_DATA) {
+            LOG_ERROR("Invalid or missing tag for smart contract data in tx_extra");
+            return false;
+        }
+
+        // Deserialize the data
+        std::string serialized_data(extra.begin() + 1, extra.end());
+        bool result = t_serializable_object_from_blob<tx_extra_smart_contract_data>(sc_data, serialized_data);
+        if (!result) {
+            LOG_ERROR("Failed to deserialize smart contract data from blob");
+            return false;
+        }
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Failed to parse smart contract data from tx_extra: " << e.what());
+        return false;
+    }
   }
   //---------------------------------------------------------------
-  template<typename T>
+  /*template<typename T>
   static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, uint8_t tag)
   {
     std::vector<tx_extra_field>::iterator it;
@@ -626,7 +687,30 @@ bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
       fields.erase(it);
     }
     return true;
-  }
+  }*/
+template<typename T>
+static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, uint8_t tag)
+{
+    auto it = fields.begin();
+    while (it != fields.end())
+    {
+        if (std::holds_alternative<T>(*it)) // Check if the variant holds type T
+        {
+            bool r = ::do_serialize(ar, tag);
+            CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra field");
+            // Get the value of type T from the variant
+            T& value = std::get<T>(*it);
+            r = ::do_serialize(ar, value);
+            CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra field");
+            it = fields.erase(it); // erase returns the new iterator position
+        }
+        else
+        {
+            ++it;
+        }
+    }
+    return true;
+}
   //---------------------------------------------------------------
   bool sort_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<uint8_t> &sorted_tx_extra, bool allow_partial)
   {
@@ -694,6 +778,10 @@ bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
     if (!pick<tx_extra_mysterious_minergate>        (nar, tx_extra_fields, TX_EXTRA_MYSTERIOUS_MINERGATE_TAG)) return false;
     if (!pick<tx_extra_padding>                     (nar, tx_extra_fields, TX_EXTRA_TAG_PADDING)) return false;
 
+    if (!pick<tx_extra_evm_bytecode>                (nar, tx_extra_fields, TX_EXTRA_TAG_EVM_BYTECODE)) return false;
+    if (!pick<tx_extra_evm_context>                 (nar, tx_extra_fields, TX_EXTRA_TAG_EVM_CONTEXT)) return false;
+    if (!pick<tx_extra_smart_contract_data>         (nar, tx_extra_fields, TX_EXTRA_TAG_SMART_CONTRACT_DATA)) return false;
+    if (!pick<tx_extra_tagged_field>                (nar, tx_extra_fields, TX_EXTRA_TAGGED_FIELD)) return false;
     // if not empty, someone added a new type and did not add a case above
     if (!tx_extra_fields.empty())
     {
@@ -1025,13 +1113,13 @@ bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
     binary_archive<true> newar(oss);
 
     bool eof = false;
-    while (!eof)
+        while (!eof)
     {
       tx_extra_field field;
       bool r = ::do_serialize(ar, field);
       CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
-      if (field.type() != type)
-        ::do_serialize(newar, field);
+    if (!std::holds_alternative<tx_extra_padding>(field))
+    ::do_serialize(newar, field);
 
       std::ios_base::iostate state = iss.rdstate();
       eof = (EOF == iss.peek());

@@ -68,27 +68,30 @@ namespace cryptonote
   bool is_v1_tx(const blobdata& tx_blob);
 
   // skip_fields: How many fields of type <T> to skip
-  template<typename T>
-  bool find_tx_extra_field_by_type(const std::vector<tx_extra_field>& tx_extra_fields, T& field, size_t skip_fields = 0)
+template<typename T>
+bool find_tx_extra_field_by_type(const std::vector<tx_extra_field>& tx_extra_fields, T& field, size_t skip_fields = 0)
+{
+  if (skip_fields >= tx_extra_fields.size())
+    return false;
+
+  size_t count = 0;
+  for (const auto& check_field : tx_extra_fields)
   {
-    if (skip_fields >= tx_extra_fields.size())
-      return false;
-
-    for (tx_extra_field const &check_field : tx_extra_fields)
+    if (std::holds_alternative<T>(check_field))  // Check if the variant holds type T
     {
-      if (typeid(T) != check_field.type()) continue;
-
-      if (skip_fields == 0)
+      if (count >= skip_fields)
       {
-        field = boost::get<T>(check_field);
+        field = std::get<T>(check_field);  // Extract the value if it matches the type
         return true;
       }
-      skip_fields--;
+      count++;
     }
-
-    return false;
   }
 
+  return false;
+}
+
+  bool add_tx_extra_blob(std::vector<uint8_t>& extra, const std::string& serialized_data);
   bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields);
   bool sort_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<uint8_t> &sorted_tx_extra, bool allow_partial = false);
   crypto::public_key get_tx_pub_key_from_extra(const std::vector<uint8_t>& tx_extra, size_t pk_index = 0);

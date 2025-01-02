@@ -30,6 +30,7 @@
 
 #pragma once
 
+#define BOOST_VARIANT_LIMIT_TYPES 30
 #include <boost/variant.hpp>
 #include <vector>
 #include <sstream>
@@ -76,7 +77,6 @@ namespace cryptonote
     txout_to_key(const crypto::public_key &_key) : key(_key) { }
     crypto::public_key key;
   };
-
 
   /* inputs */
 

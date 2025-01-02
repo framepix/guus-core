@@ -286,10 +286,13 @@ build_external(boost
     ${CMAKE_COMMAND} -E env ${boost_bootstrap_cxx}
     ./bootstrap.sh --without-icu --prefix=${DEPS_DESTDIR} --with-toolset=${boost_toolset}
       --with-libraries=chrono,filesystem,program_options,system,thread,date_time,regex,serialization,locale,atomic
-  BUILD_COMMAND true
+  BUILD_COMMAND
+        ./b2 -d0 variant=release link=static runtime-link=static optimization=speed ${boost_extra}
+      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC -DBOOST_VARIANT_LIMIT_TYPES=30 -DBOOST_MPL_LIMIT_LIST_SIZE=30" cxxstd=14 visibility=global
+      --disable-icu --user-config=${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam
   INSTALL_COMMAND
     ./b2 -d0 variant=release link=static runtime-link=static optimization=speed ${boost_extra}
-      threading=multi threadapi=${boost_threadapi} cxxflags=-fPIC cxxstd=14 visibility=global
+      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC -DBOOST_VARIANT_LIMIT_TYPES=30 -DBOOST_MPL_LIMIT_LIST_SIZE=30" cxxstd=14 visibility=global
       --disable-icu --user-config=${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam
       install
   BUILD_BYPRODUCTS

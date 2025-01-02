@@ -1,3 +1,4 @@
+
 // Copyright (c) 2014-2019, The Monero Project
 // Copyright (c)      2018-2023, The Oxen Project
 // 
@@ -91,6 +92,7 @@ using namespace epee;
 #include <evmc/evmc.h>
 #include <evmc/evmc.hpp>
 #include "cryptonote_core/evm_host.h"
+
 extern "C"
 {
 #include "crypto/keccak.h"
@@ -1450,6 +1452,100 @@ void wallet2::expand_subaddresses(const cryptonote::subaddress_index& index)
   }
 }
 //----------------------------------------------------------------------------------------------------
+uint64_t wallet2::calculate_gas_fee(uint64_t gas_limit, uint64_t gas_price) {
+    return gas_limit * gas_price;
+}
+//-----------------------------------------------------------------------------------------------------
+cryptonote::transaction wallet2::create_smart_contract_deployment(const std::vector<uint8_t>& bytecode, uint64_t gas_limit, uint64_t gas_price) {
+    try {
+        // Create the EVMC VM instance
+        auto vm = evmc::VM{evmc_create_evmone()};
+
+        // Define the host interface
+        evmc_host_interface host = {};
+        host.account_exists = cryptonote::monero_account_exists;
+        host.get_balance = cryptonote::monero_get_balance;
+        host.set_storage = cryptonote::monero_set_storage;
+
+        // Create and initialize the host context
+        cryptonote::transaction current_tx; // Use the current transaction for context
+        cryptonote::MoneroHostContext host_context(reinterpret_cast<cryptonote::Blockchain*>(&m_blockchain), &current_tx);
+        const uint8_t* bytecode_data = bytecode.data();
+        size_t bytecode_size = bytecode.size();
+
+        // Initialize the message for the smart contract deployment
+        evmc_message msg = {};
+        msg.kind = EVMC_CREATE;
+        msg.flags = 0; // No special flags
+        msg.depth = 0; // Top-level call
+        msg.gas = gas_limit; // Use the provided gas limit
+        msg.input_data = bytecode_data;
+        msg.input_size = bytecode_size;
+
+        // Specify the Ethereum revision to use
+        evmc_revision rev = EVMC_CONSTANTINOPLE;
+
+        // Execute the smart contract
+        evmc::Result result = vm.execute(host, reinterpret_cast<evmc_host_context*>(&host_context), rev, msg,
+                                         bytecode_data, bytecode_size);
+
+        // Check execution result
+        if (result.status_code != EVMC_SUCCESS) {
+            throw std::runtime_error("EVMone execution failed with status code: " + std::to_string(result.status_code));
+        }
+
+        // Create the Monero transaction for deployment
+        cryptonote::transaction tx;
+        cryptonote::tx_destination_entry dst;
+        dst.addr = cryptonote::account_public_address{}; // Null address for contract deployment
+        dst.amount = 0;
+
+        cryptonote::tx_extra_smart_contract_data sc_data;
+        sc_data.bytecode = bytecode;
+        sc_data.gas_limit = gas_limit;
+        sc_data.gas_price = gas_price;
+
+        std::vector<cryptonote::tx_destination_entry> dsts = {dst};
+        std::vector<uint8_t> extra;
+
+        // Add the smart contract data to the tx_extra field
+        if (!cryptonote::add_tx_extra_smart_contract_data(extra, sc_data)) {
+            throw std::runtime_error("Failed to add smart contract data to tx_extra");
+        }
+
+        uint64_t unlock_time = 0;
+        uint64_t fee = calculate_gas_fee(gas_limit, gas_price);
+        // Initialize transaction parameters
+     cryptonote::guus_construct_tx_params tx_params;
+     tx_params.tx_type = cryptonote::txtype::smart_contract; // Specify smart contract type
+     tx_params.hf_version = cryptonote::network_version_7; // Use the appropriate hard fork version
+     tx_params.burn_fixed = 0;  // No fixed burn
+     tx_params.burn_percent = 0; // No percentage burn
+
+        // Create the transaction
+       std::vector<wallet2::pending_tx> pending_txs = create_transactions_2(
+    dsts,                   // Destination entries
+    CRYPTONOTE_DEFAULT_TX_MIXIN,  // Default mixin count
+    unlock_time,            // Unlock time
+    0,                      // Priority
+    extra,                  // Extra data for smart contract
+    0,                      // Subaddress account
+    {},                     // Subaddress indices
+    tx_params               // Transaction parameters
+    );
+
+    // Assign the first pending transaction to `tx` if you need to return a single transaction
+   if (!pending_txs.empty()) {
+    tx = pending_txs.front().tx;
+    } else {
+    throw std::runtime_error("Failed to create transaction for smart contract deployment.");
+    }
+    return tx;
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Smart contract deployment failed: ") + e.what());
+    }
+}
+//-----------------------------------------------------------------------------------------------------
 std::string wallet2::get_subaddress_label(const cryptonote::subaddress_index& index) const
 {
   if (index.major >= m_subaddress_labels.size() || index.minor >= m_subaddress_labels[index.major].size())
@@ -1523,62 +1619,6 @@ bool wallet2::frozen(size_t idx) const
 void wallet2::freeze(const crypto::key_image &ki)
 {
   freeze(get_transfer_details(ki));
-}
-//----------------------------------------------------------------------------------------------------
-// Executes EVM bytecode using EVMC
-evmc_result wallet2::execute_evm(const std::vector<uint8_t>& bytecode, const evmc_message& msg) {
-    try {
-        auto vm = evmc::VM{evmc_create_evmone()};
-        evmc_host_context* context = create_evm_context();
-        if (!context) {
-            throw std::runtime_error("Failed to create EVMC context");
-        }
-
-        evmc_revision rev = EVMC_CONSTANTINOPLE; // Or whatever revision you want to use
-
-        evmc_host_interface host_interface = {
-            .account_exists = monero_account_exists,
-            .get_storage = nullptr,
-            .set_storage = monero_set_storage,
-            .get_balance = monero_get_balance,
-        };
-
-        // Use the correct execute function signature
-        evmc::Result result = vm.execute(host_interface, context, rev, msg, bytecode.data(), bytecode.size());
-
-        destroy_evm_context(context);
-
-        evmc_result raw_result = {
-            .status_code = result.status_code,
-            .gas_left = result.gas_left,
-            .gas_refund = result.gas_refund,
-            .output_data = result.output_data,
-            .output_size = result.output_size,
-            .create_address = result.create_address
-        };
-
-        return raw_result;
-        // Here, you'll need to convert or access the evmc_result from evmc::Result
-        // Since evmc::Result seems to wrap evmc_result, you might do something like:
-        //return result; // This assumes evmc::Result can be implicitly converted or is directly usable as evmc_result
-
-    } catch (const std::exception& e) {
-        LOG_ERROR("Exception during EVM execution: " << e.what());
-        return evmc_result{EVMC_FAILURE}; // Return failure result
-    }
-}
-
-evmc_host_context* wallet2::create_evm_context() {
-    return reinterpret_cast<evmc_host_context*>(
-        new cryptonote::MoneroHostContext(m_blockchain_storage, &m_current_tx)
-    );
-}
-
-// Destroys an EVMC-compatible host context
-void wallet2::destroy_evm_context(evmc_host_context* ctx) {
-    if (ctx) {
-        delete reinterpret_cast<cryptonote::MoneroHostContext*>(ctx);
-    }
 }
 //----------------------------------------------------------------------------------------------------
 void wallet2::thaw(const crypto::key_image &ki)
