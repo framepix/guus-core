@@ -51,6 +51,7 @@
 #include <evmc/mocked_host.hpp>
 
 using namespace epee;
+std::mutex extra_mutex;
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "cn"
@@ -291,8 +292,8 @@ namespace cryptonote
   // Function to add raw data (blob) to tx_extra
    bool add_tx_extra_blob(std::vector<uint8_t>& extra, const std::string& serialized_data) {
     try {
-        std::vector<uint8_t> data(serialized_data.begin(), serialized_data.end());
-        extra.insert(extra.end(), data.begin(), data.end());
+        std::lock_guard<std::mutex> lock(extra_mutex);
+        extra.insert(extra.end(), serialized_data.begin(), serialized_data.end());
         return true;
     } catch (const std::exception& e) {
         LOG_ERROR("Failed to add blob to tx_extra: " << e.what());
@@ -300,34 +301,72 @@ namespace cryptonote
     }
    }
   //---------------------------------------------------------------
+  // Pass large data by reference instead of by value
   bool add_tx_extra_smart_contract_data(std::vector<uint8_t>& extra, const tx_extra_smart_contract_data& sc_data) {
     try {
         tx_extra_tagged_field tagged_field;
-        tagged_field.tag = TX_EXTRA_TAG_SMART_CONTRACT_DATA;  // Define the tag for smart contract data
-        tagged_field.data = sc_data;  // Store the smart contract data in the tagged field
+        tagged_field.tag = TX_EXTRA_TAG_SMART_CONTRACT_DATA; // Define the tag for smart contract data
+        tagged_field.data = sc_data; // Store the smart contract data in the tagged field
 
-        // Serialize the tagged field and add it to the extra vector
+        // Serialize tagged_field into a std::string
         std::string serialized_data = t_serializable_object_to_blob(tagged_field);
-        return add_tx_extra_blob(extra, serialized_data);  // Assuming add_tx_extra_blob is implemented correctly
+
+        // Reserve space in 'extra' to avoid frequent reallocations
+        {
+            std::lock_guard<std::mutex> lock(extra_mutex); // Protect access to 'extra' in multi-threaded environments
+            extra.reserve(extra.size() + serialized_data.size());
+            extra.insert(extra.end(), serialized_data.begin(), serialized_data.end());
+        }
+
+        return true;
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to add smart contract data to tx_extra: " << e.what());
+        // Log the error with detailed information for debugging
+        LOG_ERROR("Failed to add smart contract data to tx_extra: " << e.what() 
+                  << ". Bytecode size: " << sc_data.bytecode.size() 
+                  << ", Gas limit: " << sc_data.gas_limit 
+                  << ", Gas price: " << sc_data.gas_price);
         return false;
-    }
+     }
+   }
+  //-----------------------------------------------------------------
+  // Asynchronous function for adding smart contract data to tx_extra
+  void add_tx_extra_smart_contract_data_async(std::vector<uint8_t>& extra, const tx_extra_smart_contract_data& sc_data) {
+    std::thread([&]() {
+        add_tx_extra_smart_contract_data(extra, sc_data);  // Call the original function in a background thread
+    }).detach();  // Detach to run asynchronously
   }
   //----------------------------------------------------------------
-  // Implementation of new transaction parsing for smart contracts
+  // Function to parse and validate a transaction with smart contract data
   bool parse_and_validate_tx_with_smart_contract(const blobdata& tx_blob, transaction_with_smart_contract& tx) {
-    // Parse regular transaction
+    // Parse the regular transaction fields
     if (!parse_and_validate_tx_from_blob(tx_blob, static_cast<transaction&>(tx))) {
+        LOG_ERROR("Failed to parse and validate the base transaction.");
         return false;
     }
 
-    // Parse additional smart contract data if present
-    // Here you would implement logic to decode and validate smart contract specific data
-    // For simplicity, we're just setting the flag here
-    tx.is_smart_contract = true; // Example: Flagging it as a smart contract transaction
+    // Deserialize the tx.extra data into tx_extra_field structures
+    std::vector<tx_extra_field> tx_extra_fields;
+    if (!parse_tx_extra(tx.extra, tx_extra_fields)) {
+        LOG_ERROR("Failed to parse tx.extra.");
+        return false;
+    }
+
+    // Process the deserialized tx_extra fields
+    for (const auto& field : tx_extra_fields) {
+        if (std::holds_alternative<tx_extra_tagged_field>(field)) {
+            const tx_extra_tagged_field& extra_field = std::get<tx_extra_tagged_field>(field);
+
+            if (extra_field.tag == TX_EXTRA_TAG_SMART_CONTRACT_DATA) {
+                // Extract and validate the smart contract data
+                tx.contract_data = extra_field.data; // Assuming transaction_with_smart_contract has a smart_contract_data field
+                tx.is_smart_contract = true; // Mark as a smart contract transaction
+                LOG_PRINT_L1("Smart contract data parsed successfully.");
+            }
+        }
+    }
+
     return true;
-}
+  }
  //----------------------------------------------------------------
  // Implementation of smart contract transaction construction
  // Function to construct a transaction with smart contract data

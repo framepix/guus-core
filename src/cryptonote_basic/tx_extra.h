@@ -590,11 +590,15 @@ namespace cryptonote
     std::vector<uint8_t> bytecode; // The smart contract bytecode
     uint64_t gas_limit;           // The maximum gas limit for execution
     uint64_t gas_price;           // The price of gas in cryptocurrency units
+    std::vector<uint8_t> input_data; // Input data for contract execution
+    std::vector<uint8_t> function_call;
 
     BEGIN_SERIALIZE()
         FIELD(bytecode)
         FIELD(gas_limit)
         FIELD(gas_price)
+        FIELD(input_data)
+        FIELD(function_call)
     END_SERIALIZE()
    };
 

@@ -66,7 +66,7 @@ namespace cryptonote
   bool parse_and_validate_tx_base_from_blob(const blobdata& tx_blob, transaction& tx);
   bool is_v1_tx(const blobdata_ref& tx_blob);
   bool is_v1_tx(const blobdata& tx_blob);
-
+  void add_tx_extra_smart_contract_data_async(std::vector<uint8_t>& extra, const tx_extra_smart_contract_data& sc_data);
   // skip_fields: How many fields of type <T> to skip
 template<typename T>
 bool find_tx_extra_field_by_type(const std::vector<tx_extra_field>& tx_extra_fields, T& field, size_t skip_fields = 0)
