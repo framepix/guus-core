@@ -30,8 +30,6 @@
 
 #pragma once
 
-#define BOOST_VARIANT_LIMIT_TYPES 30
-#include <boost/variant.hpp>
 #include <vector>
 #include <sstream>
 #include <atomic>
@@ -42,6 +40,8 @@
 #include "serialization/debug_archive.h"
 #include "serialization/crypto.h"
 #include "serialization/keyvalue_serialization.h" // eepe named serialization
+#include <ranges>
+#include <variant>
 #include "cryptonote_config.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
@@ -131,9 +131,9 @@ namespace cryptonote
   };
 
 
-  typedef boost::variant<txin_gen, txin_to_script, txin_to_scripthash, txin_to_key> txin_v;
-
-  typedef boost::variant<txout_to_script, txout_to_scripthash, txout_to_key> txout_target_v;
+    using txin_v = std::variant<txin_gen, txin_to_script, txin_to_scripthash, txin_to_key>;
+ // using txin_v = std::variant<cryptonote::txin_gen, cryptonote::txin_to_script, cryptonote::txin_to_scripthash, cryptonote::txin_to_key>;
+  using txout_target_v = std::variant<txout_to_script, txout_to_scripthash, txout_to_key>;
 
   //typedef std::pair<uint64_t, txout> out_t;
   struct tx_out
@@ -354,7 +354,7 @@ namespace cryptonote
             ar.tag("rctsig_prunable");
             ar.begin_object();
             r = rct_signatures.p.serialize_rctsig_prunable(ar, rct_signatures.type, vin.size(), vout.size(),
-                vin.size() > 0 && vin[0].type() == typeid(txin_to_key) ? boost::get<txin_to_key>(vin[0]).key_offsets.size() - 1 : 0);
+                vin.size() > 0 && std::holds_alternative<txin_to_key>(vin[0]) ? std::get<txin_to_key>(vin[0]).key_offsets.size() - 1 : 0);
             if (!r || !ar.stream().good()) return false;
             ar.end_object();
           }
@@ -428,15 +428,14 @@ namespace cryptonote
   inline
   size_t transaction::get_signature_size(const txin_v& tx_in)
   {
-    struct txin_signature_size_visitor : public boost::static_visitor<size_t>
-    {
-      size_t operator()(const txin_gen& txin) const{return 0;}
-      size_t operator()(const txin_to_script& txin) const{return 0;}
-      size_t operator()(const txin_to_scripthash& txin) const{return 0;}
-      size_t operator()(const txin_to_key& txin) const {return txin.key_offsets.size();}
+    struct txin_signature_size_visitor {
+      size_t operator()(const txin_gen& /*txin*/) const { return 0; }
+      size_t operator()(const txin_to_script& /*txin*/) const { return 0; }
+      size_t operator()(const txin_to_scripthash& /*txin*/) const { return 0; }
+      size_t operator()(const txin_to_key& txin) const { return txin.key_offsets.size(); }
     };
 
-    return boost::apply_visitor(txin_signature_size_visitor(), tx_in);
+    return std::visit(txin_signature_size_visitor(), tx_in);
   }
 
 

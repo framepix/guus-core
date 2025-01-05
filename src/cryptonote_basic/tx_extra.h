@@ -35,7 +35,6 @@
 #include "serialization/binary_archive.h"
 #include "serialization/variant.h"
 #include "crypto/crypto.h"
-//#include <boost/variant.hpp>
 #include "lns.h"
 #include "cryptonote_basic.h"
 #include <evmc/loader.h>

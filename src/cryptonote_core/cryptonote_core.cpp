@@ -1293,7 +1293,7 @@ namespace cryptonote
 
     // Sender - assuming the first input's key image can represent the sender
     if (tx.vin.size() > 0) {
-        if (const auto* tokey_in = boost::get<txin_to_key>(&tx.vin[0])) {
+        if (const auto* tokey_in = std::get_if<txin_to_key>(&tx.vin[0])) {
             memcpy(&msg.sender, &tokey_in->k_image, sizeof(msg.sender));
         }
     }
@@ -1877,7 +1877,7 @@ void core::destroy_host_context(void* context) {
     std::unordered_set<crypto::key_image> ki;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
+      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
       if(!ki.insert(tokey_in.k_image).second)
         return false;
     }
@@ -1891,7 +1891,7 @@ void core::destroy_host_context(void* context) {
     {
       for(const auto& in: tx.vin)
       {
-        CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
+        CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
         for (size_t n = 1; n < tokey_in.key_offsets.size(); ++n)
           if (tokey_in.key_offsets[n] == 0)
             return false;
@@ -1905,7 +1905,7 @@ void core::destroy_host_context(void* context) {
     std::unordered_set<crypto::key_image> ki;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
+      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
       if (!(rct::scalarmultKey(rct::ki2rct(tokey_in.k_image), rct::curveOrder()) == rct::identity()))
         return false;
     }

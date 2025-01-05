@@ -31,12 +31,14 @@
 
 #include <atomic>
 #include <variant>
-#include <boost/algorithm/string.hpp>
+#include <string>
+#include <algorithm>
 #include "wipeable_string.h"
 #include "string_tools.h"
 #include "common/i18n.h"
 #include "common/osrb.h"
 #include "serialization/string.h"
+#include "serialization/variant.h"
 #include "cryptonote_format_utils.h"
 #include "cryptonote_config.h"
 #include "crypto/crypto.h"
@@ -49,6 +51,7 @@
 #include <evmc/evmc.hpp>
 #include <evmone/evmone.h>
 #include <evmc/mocked_host.hpp>
+#include "tx_extra.h"
 
 using namespace epee;
 std::mutex extra_mutex;
@@ -104,8 +107,8 @@ namespace cryptonote
   // a copy of rct::addKeys, since we can't link to libringct to avoid circular dependencies
   static void add_public_key(crypto::public_key &AB, const crypto::public_key &A, const crypto::public_key &B) {
       ge_p3 B2, A2;
-      CHECK_AND_ASSERT_THROW_MES_L1(ge_frombytes_vartime(&B2, &B) == 0, "ge_frombytes_vartime failed at "+boost::lexical_cast<std::string>(__LINE__));
-      CHECK_AND_ASSERT_THROW_MES_L1(ge_frombytes_vartime(&A2, &A) == 0, "ge_frombytes_vartime failed at "+boost::lexical_cast<std::string>(__LINE__));
+      CHECK_AND_ASSERT_THROW_MES_L1(ge_frombytes_vartime(&B2, &B) == 0, "ge_frombytes_vartime failed at " + std::to_string(__LINE__));
+      CHECK_AND_ASSERT_THROW_MES_L1(ge_frombytes_vartime(&A2, &A) == 0, "ge_frombytes_vartime failed at " + std::to_string(__LINE__));
       ge_cached tmp2;
       ge_p3_to_cached(&tmp2, &B2);
       ge_p1p1 tmp3;
@@ -145,12 +148,12 @@ namespace cryptonote
       }
       for (size_t n = 0; n < tx.rct_signatures.outPk.size(); ++n)
       {
-        if (tx.vout[n].target.type() != typeid(txout_to_key))
+        if (!std::holds_alternative<txout_to_key>(tx.vout[n].target))
         {
           LOG_PRINT_L1("Unsupported output type in tx " << get_transaction_hash(tx));
           return false;
         }
-        rv.outPk[n].dest = rct::pk2rct(boost::get<txout_to_key>(tx.vout[n].target).key);
+        rv.outPk[n].dest = rct::pk2rct(std::get<txout_to_key>(tx.vout[n].target).key);
       }
 
       if (!base_only)
@@ -545,10 +548,12 @@ bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
     return total;
   }
   //---------------------------------------------------------------
-  bool parse_amount(uint64_t& amount, const std::string& str_amount_)
+    bool parse_amount(uint64_t& amount, const std::string& str_amount_)
   {
     std::string str_amount = str_amount_;
-    boost::algorithm::trim(str_amount);
+    // Remove leading and trailing whitespace
+    str_amount.erase(str_amount.begin(), std::find_if(str_amount.begin(), str_amount.end(), [](unsigned char ch) { return !std::isspace(ch); }));
+    str_amount.erase(std::find_if(str_amount.rbegin(), str_amount.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), str_amount.end());
 
     size_t point_index = str_amount.find_first_of('.');
     size_t fraction_size;
@@ -557,7 +562,7 @@ bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
       fraction_size = str_amount.size() - point_index - 1;
       while (default_decimal_point < fraction_size && '0' == str_amount.back())
       {
-        str_amount.erase(str_amount.size() - 1, 1);
+        str_amount.pop_back();
         --fraction_size;
       }
       if (default_decimal_point < fraction_size)
@@ -662,56 +667,71 @@ bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,
     BINARY_ARCHIVE_STREAM(iss, tx_extra);
     binary_archive<false> ar(iss);
 
-    bool eof = false;
-    while (!eof) {
+    while (iss.peek() != EOF) {
         tx_extra_field field;
-        bool r = ::do_serialize(ar, field);
-        CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
+        if (!::do_serialize(ar, field)) {
+            LOG_ERROR("Failed to deserialize tx_extra field.");
+            return false;
+        }
         tx_extra_fields.push_back(field);
-
-        std::ios_base::iostate state = iss.rdstate();
-        eof = (EOF == iss.peek());
-        iss.clear(state);
     }
 
-    CHECK_AND_NO_ASSERT_MES_L1(::serialization::check_stream_state(ar), false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
-
-    // Now handle the smart contract data
-   for (auto& field : tx_extra_fields) {
+/*    for (const auto& field : tx_extra_fields) {
     if (std::holds_alternative<tx_extra_tagged_field>(field)) {
-        const tx_extra_tagged_field& extra_tag = std::get<tx_extra_tagged_field>(field);
-        // This is where you can access the smart contract data
-        const auto& smart_contract_data = extra_tag.data;
-        // You can now use smart_contract_data.bytecode, smart_contract_data.gas_limit, and smart_contract_data.gas_price
-        LOG_PRINT_L1("Smart contract data found: bytecode size = " << smart_contract_data.bytecode.size()
-                      << ", gas limit = " << smart_contract_data.gas_limit
-                      << ", gas price = " << smart_contract_data.gas_price);
-       }
-    }
+        const auto& extra_tag = std::get<tx_extra_tagged_field>(field);
+
+        // Get the smart contract data using get_if on the variant
+        // Ensure const correctness by passing the reference to get_if correctly
+        if (auto* sc_data = std::get_if<cryptonote::tx_extra_smart_contract_data>(&extra_tag.data)) {
+            LOG_PRINT_L1("Smart contract data found: bytecode size = " << sc_data->bytecode.size()
+                          << ", gas limit = " << sc_data->gas_limit
+                          << ", gas price = " << sc_data->gas_price);
+        } else {
+            LOG_ERROR("Unexpected type in tx_extra_tagged_field data. Expected smart contract data.");
+        }
+        }
+     }*/
 
     return true;
    }
   //--------------------------------------------------------------
   bool parse_tx_extra_smart_contract_data(const std::vector<uint8_t>& extra, tx_extra_smart_contract_data& sc_data) {
     try {
-        if (extra.empty() || extra[0] != TX_EXTRA_TAG_SMART_CONTRACT_DATA) {
-            LOG_ERROR("Invalid or missing tag for smart contract data in tx_extra");
+        // Find the tag for smart contract data
+        auto it = std::find(extra.begin(), extra.end(), TX_EXTRA_TAG_SMART_CONTRACT_DATA);
+        if (it == extra.end()) {
+            LOG_ERROR("Smart contract data tag not found in tx_extra.");
+            return false;
+        }
+
+        // Ensure there is data following the tag
+        auto tag_index = std::distance(extra.begin(), it);
+        if (extra.size() <= tag_index + 1) {
+            LOG_ERROR("No serialized data found after smart contract data tag.");
             return false;
         }
 
         // Deserialize the data
-        std::string serialized_data(extra.begin() + 1, extra.end());
+        std::string serialized_data(it + 1, extra.end());
+        if (serialized_data.empty()) {
+            LOG_ERROR("Serialized data is empty after smart contract tag.");
+            return false;
+        }
+
         bool result = t_serializable_object_from_blob<tx_extra_smart_contract_data>(sc_data, serialized_data);
         if (!result) {
-            LOG_ERROR("Failed to deserialize smart contract data from blob");
+            LOG_ERROR("Failed to deserialize smart contract data. Serialized data size: " << serialized_data.size());
             return false;
         }
         return true;
     } catch (const std::exception& e) {
-        LOG_ERROR("Failed to parse smart contract data from tx_extra: " << e.what());
+        LOG_ERROR("Exception during smart contract data parsing: " << e.what());
+        return false;
+    } catch (...) {
+        LOG_ERROR("Unknown error during smart contract data parsing.");
         return false;
     }
-  }
+   }
   //---------------------------------------------------------------
   /*template<typename T>
   static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, uint8_t tag)
@@ -1227,13 +1247,11 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
     return result;
   }
   //---------------------------------------------------------------
-  bool get_inputs_money_amount(const transaction& tx, uint64_t& money)
-  {
+  bool get_inputs_money_amount(const transaction& tx, uint64_t& money) {
     money = 0;
-    for(const auto& in: tx.vin)
-    {
-      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
-      money += tokey_in.amount;
+    for (const auto& in : tx.vin) {
+        CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
+        money += tokey_in.amount;
     }
     return true;
   }
@@ -1241,23 +1259,23 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
   uint64_t get_block_height(const block& b)
   {
     CHECK_AND_ASSERT_MES(b.miner_tx.vin.size() == 1, 0, "wrong miner tx in block: " << get_block_hash(b) << ", b.miner_tx.vin.size() != 1 (size is: " << b.miner_tx.vin.size() << ")");
-    CHECKED_GET_SPECIFIC_VARIANT(b.miner_tx.vin[0], const txin_gen, coinbase_in, 0);
+    CHECKED_GET_SPECIFIC_VARIANT(b.miner_tx.vin[0], txin_gen, coinbase_in, 0);
     return coinbase_in.height;
   }
   //---------------------------------------------------------------
-  bool check_inputs_types_supported(const transaction& tx)
+    bool check_inputs_types_supported(const transaction& tx)
   {
     for(const auto& in: tx.vin)
     {
-      CHECK_AND_ASSERT_MES(in.type() == typeid(txin_to_key), false, "wrong variant type: "
-        << in.type().name() << ", expected " << typeid(txin_to_key).name()
+      CHECK_AND_ASSERT_MES(std::holds_alternative<txin_to_key>(in), false, "wrong variant type: "
+        << "expected " << typeid(txin_to_key).name()
         << ", in transaction id=" << get_transaction_hash(tx));
 
     }
     return true;
   }
   //-----------------------------------------------------------------------------------------------
-  bool check_outs_valid(const transaction& tx)
+    bool check_outs_valid(const transaction& tx)
   {
     if (!tx.is_transfer())
     {
@@ -1271,8 +1289,8 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
 
     for(const tx_out& out: tx.vout)
     {
-      CHECK_AND_ASSERT_MES(out.target.type() == typeid(txout_to_key), false, "wrong variant type: "
-        << out.target.type().name() << ", expected " << typeid(txout_to_key).name()
+      CHECK_AND_ASSERT_MES(std::holds_alternative<txout_to_key>(out.target), false, "wrong variant type: "
+        << "expected " << typeid(txout_to_key).name()
         << ", in transaction id=" << get_transaction_hash(tx));
 
       if (tx.version == txversion::v1)
@@ -1280,7 +1298,7 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
         CHECK_AND_NO_ASSERT_MES(0 < out.amount, false, "zero amount output in transaction id=" << get_transaction_hash(tx));
       }
 
-      if(!check_key(boost::get<txout_to_key>(out.target).key))
+      if(!check_key(std::get<txout_to_key>(out.target).key))
         return false;
     }
     return true;
@@ -1296,7 +1314,7 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
     uint64_t money = 0;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
+      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, false);
       if(money > tokey_in.amount + money)
         return false;
       money += tokey_in.amount;
@@ -1385,15 +1403,15 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
     return lookup_acc_outs(acc, tx, tx_pub_key, additional_tx_pub_keys, outs, money_transfered);
   }
   //---------------------------------------------------------------
-  bool lookup_acc_outs(const account_keys& acc, const transaction& tx, const crypto::public_key& tx_pub_key, const std::vector<crypto::public_key>& additional_tx_pub_keys, std::vector<size_t>& outs, uint64_t& money_transfered)
+    bool lookup_acc_outs(const account_keys& acc, const transaction& tx, const crypto::public_key& tx_pub_key, const std::vector<crypto::public_key>& additional_tx_pub_keys, std::vector<size_t>& outs, uint64_t& money_transfered)
   {
-    CHECK_AND_ASSERT_MES(additional_tx_pub_keys.empty() || additional_tx_pub_keys.size() == tx.vout.size(), false, "wrong number of additional pubkeys" );
+    CHECK_AND_ASSERT_MES(additional_tx_pub_keys.empty() || additional_tx_pub_keys.size() == tx.vout.size(), false, "wrong number of additional pubkeys");
     money_transfered = 0;
     size_t i = 0;
-    for(const tx_out& o:  tx.vout)
+    for(const tx_out& o: tx.vout)
     {
-      CHECK_AND_ASSERT_MES(o.target.type() ==  typeid(txout_to_key), false, "wrong type id in transaction out" );
-      if(is_out_to_acc(acc, boost::get<txout_to_key>(o.target), tx_pub_key, additional_tx_pub_keys, i))
+      CHECK_AND_ASSERT_MES(std::holds_alternative<txout_to_key>(o.target), false, "wrong type id in transaction out");
+      if(is_out_to_acc(acc, std::get<txout_to_key>(o.target), tx_pub_key, additional_tx_pub_keys, i))
       {
         outs.push_back(i);
         money_transfered += o.amount;
@@ -1562,7 +1580,7 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
     return get_transaction_hash(t, res, NULL);
   }
   //---------------------------------------------------------------
-  bool calculate_transaction_prunable_hash(const transaction& t, const cryptonote::blobdata *blob, crypto::hash& res)
+    bool calculate_transaction_prunable_hash(const transaction& t, const cryptonote::blobdata *blob, crypto::hash& res)
   {
     if (t.version == txversion::v1)
       return false;
@@ -1579,7 +1597,9 @@ static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, 
       binary_archive<true> ba(ss);
       const size_t inputs = t.vin.size();
       const size_t outputs = t.vout.size();
-      const size_t mixin = t.vin.empty() ? 0 : t.vin[0].type() == typeid(txin_to_key) ? boost::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1 : 0;
+      const size_t mixin = t.vin.empty() ? 0 : 
+        (std::holds_alternative<txin_to_key>(t.vin[0]) ? 
+         std::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1 : 0);
       bool r = tt.rct_signatures.p.serialize_rctsig_prunable(ba, t.rct_signatures.type, inputs, outputs, mixin);
       CHECK_AND_ASSERT_MES(r, false, "Failed to serialize rct signatures prunable");
       cryptonote::get_blob_hash(ss.str(), res);

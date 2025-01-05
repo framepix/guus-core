@@ -27,12 +27,12 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "json_object.h"
-
-#include <boost/range/adaptor/transformed.hpp>
-#include <boost/variant/apply_visitor.hpp>
+#include <ranges>
 #include <limits>
 #include <type_traits>
 #include "string_tools.h"
+#include <algorithm>
+#include <vector>
 
 namespace cryptonote
 {
@@ -299,24 +299,24 @@ void toJsonValue(rapidjson::Document& doc, const cryptonote::txin_v& txin, rapid
     rapidjson::Document& doc;
     rapidjson::Value& val;
 
-    void operator()(cryptonote::txin_to_key const& input) const
+    void operator()(const cryptonote::txin_to_key& input) const
     {
       INSERT_INTO_JSON_OBJECT(val, doc, to_key, input);
     }
-    void operator()(cryptonote::txin_gen const& input) const
+    void operator()(const cryptonote::txin_gen& input) const
     {
       INSERT_INTO_JSON_OBJECT(val, doc, gen, input);
     }
-    void operator()(cryptonote::txin_to_script const& input) const
+    void operator()(const cryptonote::txin_to_script& input) const
     {
       INSERT_INTO_JSON_OBJECT(val, doc, to_script, input);
     }
-    void operator()(cryptonote::txin_to_scripthash const& input) const
+    void operator()(const cryptonote::txin_to_scripthash& input) const
     {
       INSERT_INTO_JSON_OBJECT(val, doc, to_scripthash, input);
     }
   };
-  boost::apply_visitor(add_input{doc, val}, txin);
+  std::visit(add_input{doc, val}, txin);
 }
 
 
@@ -516,20 +516,20 @@ void toJsonValue(rapidjson::Document& doc, const cryptonote::tx_out& txout, rapi
     rapidjson::Document& doc;
     rapidjson::Value& val;
 
-    void operator()(cryptonote::txout_to_key const& output) const
+    void operator()(const cryptonote::txout_to_key& output) const
     {
       INSERT_INTO_JSON_OBJECT(val, doc, to_key, output);
     }
-    void operator()(cryptonote::txout_to_script const& output) const
+    void operator()(const cryptonote::txout_to_script& output) const
     {
       INSERT_INTO_JSON_OBJECT(val, doc, to_script, output);
     }
-    void operator()(cryptonote::txout_to_scripthash const& output) const
+    void operator()(const cryptonote::txout_to_scripthash& output) const
     {
       INSERT_INTO_JSON_OBJECT(val, doc, to_scripthash, output);
     }
   };
-  boost::apply_visitor(add_output{doc, val}, txout.target);
+  std::visit(add_output{doc, val}, txout.target);
 }
 
 void fromJsonValue(const rapidjson::Value& val, cryptonote::tx_out& txout)
@@ -968,8 +968,6 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::BlockHeaderResp
 
 void toJsonValue(rapidjson::Document& doc, const rct::rctSig& sig, rapidjson::Value& val)
 {
-  using boost::adaptors::transform;
-
   val.SetObject();
 
   const auto just_mask = [] (rct::ctkey const& key) -> rct::key const&
@@ -979,7 +977,13 @@ void toJsonValue(rapidjson::Document& doc, const rct::rctSig& sig, rapidjson::Va
 
   INSERT_INTO_JSON_OBJECT(val, doc, type, sig.type);
   INSERT_INTO_JSON_OBJECT(val, doc, encrypted, sig.ecdhInfo);
-  INSERT_INTO_JSON_OBJECT(val, doc, commitments, transform(sig.outPk, just_mask));
+
+  // Create a vector to hold the transformed commitments
+  std::vector<rct::key> commitments;
+  commitments.reserve(sig.outPk.size());
+  std::transform(sig.outPk.begin(), sig.outPk.end(), std::back_inserter(commitments), just_mask);
+  INSERT_INTO_JSON_OBJECT(val, doc, commitments, commitments);
+
   INSERT_INTO_JSON_OBJECT(val, doc, fee, sig.txnFee);
 
   // prunable
@@ -998,8 +1002,6 @@ void toJsonValue(rapidjson::Document& doc, const rct::rctSig& sig, rapidjson::Va
 
 void fromJsonValue(const rapidjson::Value& val, rct::rctSig& sig)
 {
-  using boost::adaptors::transform;
-
   if (!val.IsObject())
   {
     throw WRONG_TYPE("json object");

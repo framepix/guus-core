@@ -200,12 +200,12 @@ namespace cryptonote {
     return tools::base58::encode_addr(integrated_address_prefix, t_serializable_object_to_blob(iadr));
   }
   //-----------------------------------------------------------------------
-  bool is_coinbase(const transaction& tx)
+    bool is_coinbase(const transaction& tx)
   {
     if(tx.vin.size() != 1)
       return false;
 
-    if(tx.vin[0].type() != typeid(txin_gen))
+    if (!std::holds_alternative<txin_gen>(tx.vin[0]))
       return false;
 
     return true;

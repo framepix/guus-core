@@ -43,6 +43,8 @@
 #include "cryptonote_basic/smart_contract_utils.h"
 #include <evmc/evmc.h>
 #include <vector>
+#include "serialization/variant.h"
+#include "common/meta.h"
 
 namespace epee
 {
@@ -252,7 +254,7 @@ bool find_tx_extra_field_by_type(const std::vector<tx_extra_field>& tx_extra_fie
     return true;
   }
   //---------------------------------------------------------------
-  template <typename T>
+    template <typename T>
   std::string obj_to_json_str(T& obj)
   {
     std::stringstream ss;
@@ -316,10 +318,10 @@ bool find_tx_extra_field_by_type(const std::vector<tx_extra_field>& tx_extra_fie
 
   crypto::secret_key encrypt_key(crypto::secret_key key, const epee::wipeable_string &passphrase);
   crypto::secret_key decrypt_key(crypto::secret_key key, const epee::wipeable_string &passphrase);
-#define CHECKED_GET_SPECIFIC_VARIANT(variant_var, specific_type, variable_name, fail_return_val) \
-  CHECK_AND_ASSERT_MES(variant_var.type() == typeid(specific_type), fail_return_val, "wrong variant type: " << variant_var.type().name() << ", expected " << typeid(specific_type).name()); \
-  specific_type& variable_name = boost::get<specific_type>(variant_var);
-
+  #define CHECKED_GET_SPECIFIC_VARIANT(variant_var, specific_type, variable_name, fail_return_val) \
+  CHECK_AND_ASSERT_MES(std::holds_alternative<specific_type>(variant_var), fail_return_val, \
+          "wrong variant type: " << tools::type_name(tools::variant_type(variant_var)) << ", expected " << tools::type_name<specific_type>()); \
+  auto& variable_name = std::get<specific_type>(variant_var);
     // Function declarations for smart contract handling
     bool parse_and_validate_tx_with_smart_contract(const blobdata_ref& tx_blob, transaction_with_smart_contract& tx);
     bool construct_tx_with_smart_contract(const account_keys& sender_account_keys,

@@ -953,6 +953,7 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
 
     auto btxptr = std::make_shared<blink_tx>(blink_height);
     auto &btx = *btxptr;
+    //auto &tx = std::get<cryptonote::transaction>(btx.tx);
     auto &tx = boost::get<cryptonote::transaction>(btx.tx);
     // If any quorums are too small set the extra spaces to rejected (this also checks that no
     // quorums are too big).
@@ -1063,7 +1064,7 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
 }
 
 template <typename Consume>
-void extract_signature_values(bt_dict_consumer& data, string_view key, std::list<pending_signature>& signatures, Consume consume) {
+void extract_signature_values(bt_dict_consumer& data, std::string_view key, std::list<pending_signature>& signatures, Consume consume) {
     if (!data.skip_until(key)) throw std::invalid_argument("Invalid blink signature data: missing required field '" + std::string{key} + "'");
     auto list = data.consume_list_consumer();
     auto it = signatures.begin();
@@ -1329,7 +1330,7 @@ std::future<std::pair<cryptonote::blink_result, std::string>> send_blink(void *o
             {"!", blink_tag},
             {"#", get_data_as_string(tx_hash)},
             {"h", height},
-            {"q", bt_u64{checksum}},
+            {"q", checksum},
             {"t", tx_blob}
         });
 

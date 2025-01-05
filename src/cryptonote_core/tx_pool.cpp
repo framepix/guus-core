@@ -947,7 +947,7 @@ namespace cryptonote
   {
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, txin, false);
+      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, txin, false);
       std::unordered_set<crypto::hash>& kei_image_set = m_spent_key_images[txin.k_image];
       CHECK_AND_ASSERT_MES(kept_by_block || kei_image_set.size() == 0, false, "internal error: kept_by_block=" << kept_by_block
                                           << ",  kei_image_set.size()=" << kei_image_set.size() << ENDL << "txin.k_image=" << txin.k_image << ENDL
@@ -969,7 +969,7 @@ namespace cryptonote
     // ND: Speedup
     for(const txin_v& vi: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(vi, const txin_to_key, txin, false);
+      CHECKED_GET_SPECIFIC_VARIANT(vi, txin_to_key, txin, false);
       auto it = m_spent_key_images.find(txin.k_image);
       CHECK_AND_ASSERT_MES(it != m_spent_key_images.end(), false, "failed to find transaction input in key images. img=" << txin.k_image << ENDL
                                     << "transaction id = " << actual_hash);
@@ -1661,7 +1661,7 @@ namespace cryptonote
     bool ret = false;
     for(const auto& in: tx.vin)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, true);//should never fail
+      CHECKED_GET_SPECIFIC_VARIANT(in, txin_to_key, tokey_in, true);//should never fail
       auto it = m_spent_key_images.find(tokey_in.k_image);
       if (it != m_spent_key_images.end())
       {
@@ -1747,7 +1747,7 @@ namespace cryptonote
             }
             for (const auto& tx : txs) {
               for (const auto& in : tx.vin) {
-                if (in.type() == typeid(txin_to_key) && key_image_conflicts.erase(boost::get<txin_to_key>(in).k_image)) {
+                if (std::holds_alternative<txin_to_key>(in) && key_image_conflicts.erase(std::get<txin_to_key>(in).k_image)) {
                   earliest = std::min(earliest, block_height);
                   if (key_image_conflicts.empty())
                     goto end;
@@ -1851,7 +1851,7 @@ end:
   {
     for(size_t i = 0; i!= tx.vin.size(); i++)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], const txin_to_key, itk, false);
+      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], txin_to_key, itk, false);
       if(k_images.count(itk.k_image))
         return true;
     }
@@ -1862,7 +1862,7 @@ end:
   {
     for(size_t i = 0; i!= tx.vin.size(); i++)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], const txin_to_key, itk, false);
+      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], txin_to_key, itk, false);
       auto i_res = k_images.insert(itk.k_image);
       CHECK_AND_ASSERT_MES(i_res.second, false, "internal error: key images pool cache - inserted duplicate image in set: " << itk.k_image);
     }
@@ -1877,7 +1877,7 @@ end:
     LockedTXN lock(m_blockchain);
     for(size_t i = 0; i!= tx.vin.size(); i++)
     {
-      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], const txin_to_key, itk, void());
+      CHECKED_GET_SPECIFIC_VARIANT(tx.vin[i], txin_to_key, itk, void());
       const key_images_container::const_iterator it = m_spent_key_images.find(itk.k_image);
       if (it != m_spent_key_images.end())
       {
