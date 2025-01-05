@@ -620,8 +620,8 @@ namespace cryptonote
     for (size_t n = 0; n < sources.size(); ++n)
       ins_order[n] = n;
     std::sort(ins_order.begin(), ins_order.end(), [&](const size_t i0, const size_t i1) {
-      const txin_to_key &tk0 = std::get<txin_to_key>(tx.vin[i0]);
-      const txin_to_key &tk1 = std::get<txin_to_key>(tx.vin[i1]);
+      const auto& tk0 = std::get<txin_to_key>(tx.vin[i0]);
+      const auto& tk1 = std::get<txin_to_key>(tx.vin[i1]);
       return memcmp(&tk0.k_image, &tk1.k_image, sizeof(tk0.k_image)) > 0;
     });
     tools::apply_permutation(ins_order, [&] (size_t i0, size_t i1) {
@@ -789,9 +789,9 @@ namespace cryptonote
         sigs.resize(src_entr.outputs.size());
         if (!zero_secret_key)
           crypto::generate_ring_signature(tx_prefix_hash, std::get<txin_to_key>(tx.vin[i]).k_image, keys_ptrs, in_contexts[i].in_ephemeral.sec, src_entr.real_output, sigs.data());
-        ss_ring_s << "signatures:\n";
-        std::for_each(sigs.begin(), sigs.end(), [&](const crypto::signature& s){ss_ring_s << s << "\n";});
-        ss_ring_s << "prefix_hash:" << tx_prefix_hash << "\nin_ephemeral_key: " << in_contexts[i].in_ephemeral.sec << "\nreal_output: " << src_entr.real_output << "\n";
+        ss_ring_s << "signatures:" << ENDL;
+        std::for_each(sigs.begin(), sigs.end(), [&](const crypto::signature& s){ss_ring_s << s << ENDL;});
+        ss_ring_s << "prefix_hash:" << tx_prefix_hash << ENDL << "in_ephemeral_key: " << in_contexts[i].in_ephemeral.sec << ENDL << "real_output: " << src_entr.real_output << ENDL;
         i++;
       }
 

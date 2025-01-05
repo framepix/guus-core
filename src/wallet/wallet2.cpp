@@ -59,8 +59,9 @@ using namespace epee;
 #include "profile_tools.h"
 #include "crypto/crypto.h"
 #include "serialization/binary_utils.h"
-#include "serialization/string.h"
 #include "serialization/boost_std_variant.h"
+#include "serialization/string.h"
+#include "serialization/variant.h"
 #include "cryptonote_basic/blobdatatype.h"
 #include "mnemonics/electrum-words.h"
 #include "common/i18n.h"
@@ -1553,13 +1554,15 @@ void wallet2::check_acc_out_precomp(const tx_out &o, const crypto::key_derivatio
   hw::device &hwdev = m_account.get_device();
   boost::unique_lock<hw::device> hwdev_lock (hwdev);
   hwdev.set_mode(hw::device::TRANSACTION_PARSE);
-  if (!std::holds_alternative<txout_to_key>(o.target))
+  if (!std::holds_alternative<cryptonote::txout_to_key>(o.target))
   {
-     tx_scan_info.error = true;
-     LOG_ERROR("wrong type id in transaction out");
-     return;
-  }
-  tx_scan_info.received = is_out_to_acc_precomp(m_subaddresses, std::get<txout_to_key>(o.target).key, derivation, additional_derivations, i, hwdev);
+    tx_scan_info.error = true;
+    LOG_ERROR("wrong type id in transaction out");
+    return;
+   }
+
+    tx_scan_info.received = is_out_to_acc_precomp(m_subaddresses, std::get<txout_to_key>(o.target).key, derivation, additional_derivations, i, hwdev);
+
   if(tx_scan_info.received)
   {
     tx_scan_info.money_transfered = o.amount; // may be 0 for ringct outputs
@@ -1650,19 +1653,40 @@ void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, cons
     }
   }
 
-  if (m_multisig)
-  {
-    tx_scan_info.in_ephemeral.pub = std::get<cryptonote::txout_to_key>(tx.vout[vout_index].target).key;
-    tx_scan_info.in_ephemeral.sec = crypto::null_skey;
-    tx_scan_info.ki = rct::rct2ki(rct::zero());
-  }
-  else
-  {
-    bool r = cryptonote::generate_key_image_helper_precomp(m_account.get_keys(), std::get<cryptonote::txout_to_key>(tx.vout[vout_index].target).key, tx_scan_info.received->derivation, vout_index, tx_scan_info.received->index, tx_scan_info.in_ephemeral, tx_scan_info.ki, m_account.get_device());
-    THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key image");
-    THROW_WALLET_EXCEPTION_IF(tx_scan_info.in_ephemeral.pub != std::get<cryptonote::txout_to_key>(tx.vout[vout_index].target).key,
-        error::wallet_internal_error, "key_image generated ephemeral public key not matched with output_key");
-  }
+    if (m_multisig)
+    {
+    const auto* txout_to_key_ptr = std::get_if<cryptonote::txout_to_key>(&tx.vout[vout_index].target);
+    if (txout_to_key_ptr) {
+        tx_scan_info.in_ephemeral.pub = txout_to_key_ptr->key;
+        tx_scan_info.in_ephemeral.sec = crypto::null_skey;
+        tx_scan_info.ki = rct::rct2ki(rct::zero());
+      } else {
+        LOG_ERROR("Unexpected type in tx.vout target");
+        // Handle the error appropriately, possibly throw an exception
+      }
+   }
+    else
+    {
+    const auto* txout_to_key_ptr = std::get_if<cryptonote::txout_to_key>(&tx.vout[vout_index].target);
+    if (txout_to_key_ptr) {
+        bool r = cryptonote::generate_key_image_helper_precomp(
+            m_account.get_keys(),
+            txout_to_key_ptr->key,
+            tx_scan_info.received->derivation,
+            vout_index,
+            tx_scan_info.received->index,
+            tx_scan_info.in_ephemeral,
+            tx_scan_info.ki,
+            m_account.get_device()
+        );
+        THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key image");
+
+        THROW_WALLET_EXCEPTION_IF(tx_scan_info.in_ephemeral.pub != txout_to_key_ptr->key,
+            error::wallet_internal_error, "key_image generated ephemeral public key not matched with output_key");
+       } else {
+        THROW_WALLET_EXCEPTION(error::wallet_internal_error, "Unexpected type in tx.vout target");
+     }
+   }  
 
   THROW_WALLET_EXCEPTION_IF(std::find(outs.begin(), outs.end(), vout_index) != outs.end(), error::wallet_internal_error, "Same output cannot be added twice");
   if (tx_scan_info.money_transfered == 0 && !miner_tx)
@@ -2209,8 +2233,8 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
   for(auto& in: tx.vin)
   {
     if (!std::holds_alternative<cryptonote::txin_to_key>(in))
-      continue;
-    const cryptonote::txin_to_key &in_to_key = std::get<cryptonote::txin_to_key>(in);
+    continue;
+    const auto& in_to_key = std::get<cryptonote::txin_to_key>(in);
     auto it = m_key_images.find(in_to_key.k_image);
     if(it != m_key_images.end())
     {
@@ -2473,8 +2497,8 @@ void wallet2::process_outgoing(const crypto::hash &txid, const cryptonote::trans
   for (const auto &in: tx.vin)
   {
     if (!std::holds_alternative<cryptonote::txin_to_key>(in))
-      continue;
-    const auto &txin = std::get<cryptonote::txin_to_key>(in);
+    continue;
+    const auto& txin = std::get<cryptonote::txin_to_key>(in);
     entry.first->second.m_rings.push_back(std::make_pair(txin.k_image, txin.key_offsets));
   }
   entry.first->second.m_block_height = height;
@@ -2690,7 +2714,7 @@ void wallet2::process_parsed_blocks(uint64_t start_height, const std::vector<cry
         additional_derivations.reserve(tx_cache_data[txidx].additional.size());
         for (const auto &iod: tx_cache_data[txidx].additional)
           additional_derivations.push_back(iod.derivation);
-        const auto &key = std::get<txout_to_key>(o.target).key;
+        const auto& key = std::get<txout_to_key>(o.target).key;
         for (size_t l = 0; l < tx_cache_data[txidx].primary.size(); ++l)
         {
           THROW_WALLET_EXCEPTION_IF(tx_cache_data[txidx].primary[l].received.size() != n_vouts,
@@ -2992,20 +3016,17 @@ void wallet2::update_pool_state(bool refreshed)
         remove_rings(pit->second.m_tx);
         for (size_t vini = 0; vini < pit->second.m_tx.vin.size(); ++vini)
         {
-          if (std::holds_alternative<txin_to_key>(pit->second.m_tx.vin[vini]))
-          {
-            txin_to_key &tx_in_to_key = std::get<txin_to_key>(pit->second.m_tx.vin[vini]);
-            for (size_t i = 0; i < m_transfers.size(); ++i)
-            {
-              const transfer_details &td = m_transfers[i];
-              if (td.m_key_image == tx_in_to_key.k_image)
-              {
-                 LOG_PRINT_L1("Resetting spent status for output " << vini << ": " << td.m_key_image);
-                 set_unspent(i);
-                 break;
-              }
+          if (std::holds_alternative<txin_to_key>(pit->second.m_tx.vin[vini])) {
+             txin_to_key& tx_in_to_key = std::get<txin_to_key>(pit->second.m_tx.vin[vini]);
+          for (size_t i = 0; i < m_transfers.size(); ++i) {
+            const transfer_details& td = m_transfers[i];
+            if (td.m_key_image == tx_in_to_key.k_image) {
+            LOG_PRINT_L1("Resetting spent status for output " << vini << ": " << td.m_key_image);
+            set_unspent(i);
+            break;
             }
           }
+         }
         }
       }
     }
@@ -6657,9 +6678,10 @@ void wallet2::add_unconfirmed_tx(const cryptonote::transaction& tx, uint64_t amo
   utd.m_subaddr_indices = subaddr_indices;
   for (const auto &in: tx.vin)
   {
-    if (!std::holds_alternative<cryptonote::txin_to_key>(in))
-      continue;
-    const auto &txin = std::get<cryptonote::txin_to_key>(in);
+   if (!std::holds_alternative<cryptonote::txin_to_key>(in)){
+    continue;
+   }
+    const auto& txin = std::get<cryptonote::txin_to_key>(in);
     utd.m_rings.push_back(std::make_pair(txin.k_image, txin.key_offsets));
   }
 }
@@ -7037,9 +7059,9 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, std::vector<wallet2::pendin
 
     for (size_t i = 0; i < tx.vout.size(); ++i)
     {
-      if (!std::holds_alternative<cryptonote::txout_to_key>(tx.vout[i].target))
-        continue;
-      const cryptonote::txout_to_key &out = std::get<cryptonote::txout_to_key>(tx.vout[i].target);
+       if (!std::holds_alternative<cryptonote::txout_to_key>(tx.vout[i].target))
+           continue;
+       const auto& out = std::get<cryptonote::txout_to_key>(tx.vout[i].target);
       // if this output is back to this wallet, we can calculate its key image already
       if (!is_out_to_acc_precomp(m_subaddresses, out.key, derivation, additional_derivations, i, hwdev))
         continue;
@@ -12053,7 +12075,7 @@ void wallet2::check_tx_key_helper(const cryptonote::transaction &tx, const crypt
 
   for (size_t n = 0; n < tx.vout.size(); ++n)
   {
-    const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[n].target));
+        const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[n].target));
     if (!out_key)
       continue;
 
@@ -12649,7 +12671,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
 
     THROW_WALLET_EXCEPTION_IF(proof.index_in_tx >= tx.vout.size(), error::wallet_internal_error, "index_in_tx is out of bound");
 
-    const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[proof.index_in_tx].target));
+      const cryptonote::txout_to_key* const out_key = std::get_if<cryptonote::txout_to_key>(std::addressof(tx.vout[proof.index_in_tx].target));
     THROW_WALLET_EXCEPTION_IF(!out_key, error::wallet_internal_error, "Output key wasn't found");
 
     // TODO(guus): We should make a catch-all function that gets all the public
@@ -13070,8 +13092,8 @@ std::pair<size_t, std::vector<std::pair<crypto::key_image, crypto::signature>>> 
     // get ephemeral public key
     const cryptonote::tx_out &out = td.m_tx.vout[td.m_internal_output_index];
     THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<txout_to_key>(out.target), error::wallet_internal_error,
-        "Output is not txout_to_key");
-    const cryptonote::txout_to_key &o = std::get<cryptonote::txout_to_key>(out.target);
+    "Output is not txout_to_key");
+    const auto &o = std::get<txout_to_key>(out.target);
     const crypto::public_key pkey = o.key;
 
     crypto::public_key tx_pub_key;
@@ -13194,7 +13216,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
     const cryptonote::tx_out &out = td.m_tx.vout[td.m_internal_output_index];
     THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<txout_to_key>(out.target), error::wallet_internal_error,
       "Non txout_to_key output found");
-    const cryptonote::txout_to_key &o = std::get<cryptonote::txout_to_key>(out.target);
+    const auto &o = std::get<txout_to_key>(out.target);
     const crypto::public_key pkey = o.key;
 
     if (!td.m_key_image_known || !(key_image == td.m_key_image))
@@ -13255,7 +13277,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
   {
     for (const cryptonote::txin_v& in : td.m_tx.vin)
     {
-      if (std::holds_alternative<cryptonote::txin_to_key>(in))
+     if (std::holds_alternative<cryptonote::txin_to_key>(in))
         spent_key_images.insert(std::make_pair(std::get<cryptonote::txin_to_key>(in).k_image, td.m_txid));
     }
   }
@@ -13380,7 +13402,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
       std::set<uint32_t> subaddr_indices;
       for (const cryptonote::txin_v& in : spent_tx.vin)
       {
-        if (!std::holds_alternative<cryptonote::txin_to_key>(in))
+         if (!std::holds_alternative<cryptonote::txin_to_key>(in))
           continue;
         auto it = m_key_images.find(std::get<cryptonote::txin_to_key>(in).k_image);
         if (it != m_key_images.end())
@@ -13636,7 +13658,7 @@ process:
     }
     const std::vector<crypto::public_key> additional_tx_pub_keys = get_additional_tx_pub_keys_from_extra(td.m_tx);
 
-    THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target),
+        THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target),
         error::wallet_internal_error, "Unsupported output type");
     const crypto::public_key& out_key = std::get<cryptonote::txout_to_key>(td.m_tx.vout[td.m_internal_output_index].target).key;
     bool r = cryptonote::generate_key_image_helper(m_account.get_keys(), m_subaddresses, out_key, tx_pub_key, additional_tx_pub_keys, td.m_internal_output_index, in_ephemeral, td.m_key_image, m_account.get_device());
@@ -14375,7 +14397,7 @@ bool wallet2::generate_signature_for_request_stake_unlock(crypto::key_image cons
     // get ephemeral public key
     const cryptonote::tx_out &out = td.m_tx.vout[td.m_internal_output_index];
     THROW_WALLET_EXCEPTION_IF(!std::holds_alternative<txout_to_key>(out.target), error::wallet_internal_error, "Output is not txout_to_key");
-    const cryptonote::txout_to_key &o = std::get<cryptonote::txout_to_key>(out.target);
+    const auto &o = std::get<txout_to_key>(out.target);
     const crypto::public_key pkey = o.key;
 
     crypto::public_key tx_pub_key;

@@ -953,7 +953,8 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
 
     auto btxptr = std::make_shared<blink_tx>(blink_height);
     auto &btx = *btxptr;
-    auto &tx = std::get<cryptonote::transaction>(btx.tx);
+    //auto &tx = std::get<cryptonote::transaction>(btx.tx);
+    auto &tx = boost::get<cryptonote::transaction>(btx.tx);
     // If any quorums are too small set the extra spaces to rejected (this also checks that no
     // quorums are too big).
     for (size_t qi = 0; qi < blink_quorums.size(); qi++)

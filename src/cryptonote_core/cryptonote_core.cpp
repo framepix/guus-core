@@ -1246,7 +1246,7 @@ namespace cryptonote
     if (tx_pool_changed) m_long_poll_wake_up_clients.notify_all();
     return ok;
   }
-  //-----------------------------------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------
   std::vector<core::tx_verification_batch_info> core::handle_incoming_txs(const std::vector<blobdata>& tx_blobs, const tx_pool_options &opts)
   {
     auto lock = incoming_tx_lock();

@@ -181,6 +181,7 @@ struct json_archive<true> : public json_archive_base<std::ostream, true>
     tag(t);
   }
 
+
 private:
   size_t inner_array_size_;
 };

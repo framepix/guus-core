@@ -155,7 +155,7 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const std::pair
       has_blacklisted_outputs = true;
   }
 
-  for (const txin_v& tx_input : tx.vin)
+    for (const txin_v& tx_input : tx.vin)
   {
     if (std::holds_alternative<txin_to_key>(tx_input))
     {

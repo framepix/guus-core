@@ -49,6 +49,7 @@
 #include "cryptonote_basic/connection_context.h"
 #include "cryptonote_basic/cryptonote_stat_info.h"
 #include <boost/circular_buffer.hpp>
+#include "common/meta.h"
 
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)

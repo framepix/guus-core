@@ -40,6 +40,13 @@
 #include "common/meta.h"
 #include "serialization/binary_utils.h"
 #include <unordered_map>
+#include <boost/multiprecision/cpp_int.hpp>
+#include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_basic/smart_contract_utils.h"
+#include <evmc/evmc.h>
+#include <vector>
+#include "serialization/variant.h"
+#include "common/meta.h"
 
 namespace epee
 {
@@ -248,7 +255,7 @@ namespace cryptonote
     return true;
   }
   //---------------------------------------------------------------
-  template <typename T>
+    template <typename T>
   std::string obj_to_json_str(T& obj)
   {
     std::stringstream ss;
