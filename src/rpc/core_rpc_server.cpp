@@ -323,8 +323,7 @@ namespace cryptonote
   public:
     pruned_transaction(transaction& tx) : tx(tx) {}
     BEGIN_SERIALIZE_OBJECT()
-      bool r = tx.serialize_base(ar);
-      if (!r) return false;
+      tx.serialize_base(ar);
     END_SERIALIZE()
   };
   //------------------------------------------------------------------------------------------------------------------------------
@@ -638,15 +637,17 @@ namespace cryptonote
               res.status = "Failed to parse and validate tx from blob";
               return true;
             }
-            std::stringstream ss;
-            binary_archive<true> ba(ss);
-            if (!tx.serialize_base(ba))
-            {
-              res.status = "Failed to serialize transaction base";
+
+            serialization::binary_string_archiver ba;
+            try {
+              tx.serialize_base(ba);
+            } catch (const std::exception& e) {
+              res.status = "Failed to serialize transaction base: "s + e.what();
               return true;
             }
-            const cryptonote::blobdata pruned = ss.str();
-            sorted_txs.emplace_back(h, pruned, get_transaction_prunable_hash(tx), std::string(ptx_it->tx_blob, pruned.size()));
+            std::string pruned = ba.str();
+            std::string pruned2{ptx_it->tx_blob, pruned.size()};
+            sorted_txs.emplace_back(h, std::move(pruned), get_transaction_prunable_hash(tx), std::move(pruned2));
             missed_txs.erase(missed_it);
             per_tx_pool_tx_info.emplace(h, *ptx_it);
             ++found_in_pool;

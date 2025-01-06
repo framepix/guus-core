@@ -150,23 +150,30 @@ public:
   sqlite3_stmt* statement = nullptr;
 
   /// Constructor; takes a reference to the name_system_db.
-  explicit sql_compiled_statement(name_system_db& nsdb) : nsdb{nsdb} {}
+ // explicit sql_compiled_statement(name_system_db& nsdb) : nsdb{nsdb} {}
 
   /// Non-copyable (because we own an internal sqlite3 statement handle)
-  sql_compiled_statement(const sql_compiled_statement&) = delete;
-  sql_compiled_statement& operator=(const sql_compiled_statement&) = delete;
+/// Constructor; takes a reference to the name_system_db.
+explicit sql_compiled_statement(name_system_db& nsdb) : nsdb{nsdb} {}
 
-  /// Move construction; ownership of the internal statement handle, if present, is transferred to
-  /// the new object.
-  sql_compiled_statement(sql_compiled_statement&& from) : nsdb{from.nsdb}, statement{from.statement} { from.statement = nullptr; }
+/// Non-copyable (because we own an internal sqlite3 statement handle)
+sql_compiled_statement(const sql_compiled_statement&) = delete;
+sql_compiled_statement& operator=(const sql_compiled_statement&) = delete;
 
-  /// Move copying.  The referenced name_system_db must be the same.  Ownership of the internal
-  /// statement handle is transferred.  If the target already has a statement handle then it is
-  /// destroyed.
-  sql_compiled_statement& operator=(sql_compiled_statement&& from);
+/// Move construction; ownership of the internal statement handle, if present, is transferred to
+/// the new object.
+sql_compiled_statement(sql_compiled_statement&& from) noexcept : nsdb{from.nsdb}, statement{from.statement} 
+{ 
+  from.statement = nullptr; 
+}
 
-  /// Destroys the internal sqlite3 statement on destruction
-  ~sql_compiled_statement();
+/// Move assignment. The referenced name_system_db must be the same. Ownership of the internal
+/// statement handle is transferred. If the target already has a statement handle then it is
+/// destroyed.
+sql_compiled_statement& operator=(sql_compiled_statement&& from) noexcept;
+
+/// Destroys the internal sqlite3 statement on destruction
+~sql_compiled_statement();
 
   /// Attempts to prepare the given statement.  MERRORs and returns false on failure.  If the object
   /// already has a prepare statement then it is finalized first.

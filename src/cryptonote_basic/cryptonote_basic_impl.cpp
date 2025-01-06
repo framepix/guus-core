@@ -30,7 +30,7 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include "include_base_utils.h"
-using namespace epee;
+//using namespace epee;
 
 #include "cryptonote_basic_impl.h"
 #include "string_tools.h"
@@ -204,7 +204,7 @@ namespace cryptonote {
     if(tx.vin.size() != 1)
       return false;
 
-    if(tx.vin[0].type() != typeid(txin_gen))
+    if (!std::holds_alternative<txin_gen>(tx.vin[0]))
       return false;
 
     return true;
@@ -223,7 +223,7 @@ namespace cryptonote {
     if (2 * sizeof(public_address_outer_blob) != str.size())
     {
       blobdata data;
-      uint64_t prefix;
+      uint64_t prefix{0};
       if (!tools::base58::decode_addr(str, prefix, data))
       {
         LOG_PRINT_L2("Invalid address format");
@@ -252,24 +252,21 @@ namespace cryptonote {
         return false;
       }
 
-      if (info.has_payment_id)
-      {
-        integrated_address iadr;
-        if (!::serialization::parse_binary(data, iadr))
+      try {
+        if (info.has_payment_id)
         {
-          LOG_PRINT_L1("Account public address keys can't be parsed");
-          return false;
+          integrated_address iadr;
+          serialization::parse_binary(data, iadr);
+          info.address = iadr.adr;
+          info.payment_id = iadr.payment_id;
         }
-        info.address = iadr.adr;
-        info.payment_id = iadr.payment_id;
-      }
-      else
-      {
-        if (!::serialization::parse_binary(data, info.address))
+        else
         {
-          LOG_PRINT_L1("Account public address keys can't be parsed");
-          return false;
+          serialization::parse_binary(data, info.address);
         }
+      } catch (const std::exception& e) {
+        LOG_PRINT_L1("Account public address keys can't be parsed: "s + e.what());
+        return false;
       }
 
       if (!crypto::check_key(info.address.m_spend_public_key) || !crypto::check_key(info.address.m_view_public_key))
@@ -282,7 +279,7 @@ namespace cryptonote {
     {
       // Old address format
       std::string buff;
-      if(!string_tools::parse_hexstr_to_binbuff(str, buff))
+      if(!epee::string_tools::parse_hexstr_to_binbuff(str, buff))
         return false;
 
       if(buff.size()!=sizeof(public_address_outer_blob))

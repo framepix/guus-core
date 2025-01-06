@@ -60,8 +60,26 @@ crypto::public_key blink_tx::get_sn_pubkey(subquorum q, int position, const fram
     return crypto::null_pkey;
 };
 
+#include <array>
+
 crypto::hash blink_tx::hash(bool approved) const {
-    auto buf = tools::memcpy_le(height, get_txhash().data, uint8_t{approved});
+    // Assuming tools::memcpy_le isn't available or doesn't work as expected, we'll use std::array and std::memcpy
+    std::array<char, sizeof(height) + sizeof(crypto::hash) + sizeof(uint8_t)> buf;
+    size_t offset = 0;
+
+    // Copy height into buffer
+    std::memcpy(buf.data() + offset, &height, sizeof(height));
+    offset += sizeof(height);
+
+    // Copy the hash data into buffer
+    const crypto::hash tx_hash = get_txhash();
+    std::memcpy(buf.data() + offset, tx_hash.data, sizeof(tx_hash.data));
+    offset += sizeof(tx_hash.data);
+
+    // Copy the approval status (converted to uint8_t) into buffer
+    uint8_t approved_uint8 = approved ? 1 : 0;  // Convert bool to uint8_t
+    std::memcpy(buf.data() + offset, &approved_uint8, sizeof(approved_uint8));
+
     crypto::hash blink_hash;
     crypto::cn_fast_hash(buf.data(), buf.size(), blink_hash);
     return blink_hash;

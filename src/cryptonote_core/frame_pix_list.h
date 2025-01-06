@@ -239,7 +239,7 @@ namespace frame_pixs
 
     BEGIN_SERIALIZE_OBJECT()
       FIELD(pubkey)
-      if (!W)
+      if (Archive::is_deserializer)
         info = std::make_shared<frame_pix_info>();
       FIELD_N("info", const_cast<frame_pix_info &>(*info))
     END_SERIALIZE()

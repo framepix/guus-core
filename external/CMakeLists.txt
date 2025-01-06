@@ -35,11 +35,9 @@
 # ...except for FreeBSD, because FreeBSD is a special case that doesn't play well with
 # others.
 
-find_package(PkgConfig REQUIRED)
-
-if(NOT STATIC)
+if(NOT STATIC AND NOT BUILD_STATIC_DEPS)
+  find_package(PkgConfig REQUIRED)
   pkg_check_modules(MINIUPNPC miniupnpc>=2.1)
-  pkg_check_modules(UNBOUND libunbound)
   pkg_check_modules(LOKIMQ liblokimq>=1.1.4)
 endif()
 
@@ -87,19 +85,6 @@ else()
   if (LIBZMQ_FOUND)
     link_dep_libs(lokimq INTERFACE "${LIBZMQ_LIBRARY_DIRS}" ${LIBZMQ_LIBRARIES})
     target_include_directories(lokimq INTERFACE ${LIBZMQ_INCLUDE_DIRS})
-  endif()
-endif()
-
-find_package(Unbound)
-
-if(NOT UNBOUND_INCLUDE_DIR)
-  die("Could not find libunbound")
-else()
-  message(STATUS "Found libunbound include (unbound.h) in ${UNBOUND_INCLUDE_DIR}")
-  if(UNBOUND_LIBRARIES)
-    message(STATUS "Found libunbound library")
-  else()
-    die("Found libunbound includes, but could not find libunbound library. Please make sure you have installed libunbound or libunbound-dev or the equivalent")
   endif()
 endif()
 

@@ -281,7 +281,7 @@ rapidjson::Value SendRawTx::Response::toJson(rapidjson::Document& doc) const
 {
   auto val = Message::toJson(doc);
 
-  INSERT_INTO_JSON_OBJECT(val, doc, relayed, relayed);
+  json::insert_into_json_object(val, doc, "relayed", relayed);
 
   return val;
 }

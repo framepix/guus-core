@@ -117,6 +117,71 @@ bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
                 break;
             }
 
+            case Opcode::PUSH: {
+                // PUSH expects a number to be pushed onto the stack (variable length)
+                uint8_t len = bytecode[pc++];
+                uint256_t value = 0;
+                for (int i = 0; i < len; ++i) {
+                    value = (value << 8) | bytecode[pc++];
+                }
+                push(value);
+                consume_gas(3 + len); // Gas for PUSH
+                break;
+            }
+
+            case Opcode::JUMP: {
+                uint256_t target = pop();
+                size_t jump_target = static_cast<size_t>(target);
+                if (jump_target >= bytecode.size()) throw std::runtime_error("Jump out of bounds");
+                pc = jump_target;
+                break;
+            }
+
+            case Opcode::JUMPI: {
+                uint256_t condition = pop();
+                uint256_t target = pop();
+                if (condition != 0) {
+                    size_t jump_target = static_cast<size_t>(target);
+                    if (jump_target >= bytecode.size()) throw std::runtime_error("Jump out of bounds");
+                    pc = jump_target;
+                }
+                break;
+            }
+
+            case Opcode::TRANSFER: {
+                consume_gas(10); // Gas cost for token transfer
+                uint256_t from = pop();
+                uint256_t to = pop();
+                uint256_t amount = pop();
+                transfer(from, to, amount);
+                break;
+            }
+            case Opcode::BALANCE_OF: {
+                consume_gas(3); // Gas cost for balanceOf
+                uint256_t address = pop();
+                push(balanceOf(address));
+                break;
+            }
+
+            case Opcode::APPROVE: {
+                consume_gas(5); // Gas cost for approve
+                uint256_t owner = pop();
+                uint256_t spender = pop();
+                uint256_t amount = pop();
+                approve(owner, spender, amount);
+                break;
+            }
+
+            case Opcode::TRANSFER_FROM: {
+                consume_gas(7); // Gas cost for transferFrom
+                uint256_t spender = pop();
+                uint256_t from = pop();
+                uint256_t to = pop();
+                uint256_t amount = pop();
+                transferFrom(spender, from, to, amount);
+                break;
+            }
+
             // Add more opcodes as needed...
 
             default:
@@ -138,50 +203,56 @@ bool MoneroVM::validate_bytecode(const std::vector<uint8_t>& bytecode) {
         uint8_t op = bytecode[pc++];
         switch (static_cast<Opcode>(op)) {
             case Opcode::STOP:
-                // No stack change
                 break;
 
             case Opcode::ADD:
             case Opcode::MUL:
             case Opcode::SUB:
             case Opcode::DIV:
-                // Pops 2 values, pushes 1
                 current_stack_size -= 1;
                 break;
 
             case Opcode::MLOAD:
-                // Pops 1 value, pushes 1 value
                 break;
 
             case Opcode::MSTORE:
-                // Pops 2 values, stores but doesn't push
                 current_stack_size -= 2;
                 break;
 
-            // Add validation for other opcodes here...
+            case Opcode::TRANSFER:
+                current_stack_size -= 3; // Pops 3 values: from, to, amount
+                break;
+
+            case Opcode::BALANCE_OF:
+                current_stack_size -= 1; // Pops 1 value: address
+                break;
+
+            case Opcode::APPROVE:
+                current_stack_size -= 3; // Pops 3 values: owner, spender, amount
+                break;
+
+            case Opcode::TRANSFER_FROM:
+                current_stack_size -= 4; // Pops 4 values: spender, from, to, amount
+                break;
 
             default:
                 std::cerr << "Validation: Unknown opcode at position " << (pc - 1) << std::endl;
                 return false;
         }
 
-        // Check for stack underflow
         if (current_stack_size < 0) {
             std::cerr << "Validation: Stack underflow at opcode position " << (pc - 1) << std::endl;
             return false;
         }
 
-        // Keep track of max stack size
         max_stack_size = std::max(max_stack_size, static_cast<uint64_t>(current_stack_size));
 
-        // Check if max stack size exceeds the limit
         if (max_stack_size > 1024) {
             std::cerr << "Validation: Maximum stack size exceeded during validation" << std::endl;
             return false;
         }
     }
 
-    // Check if there's anything left on the stack at the end.
     if (current_stack_size != 0) {
         std::cerr << "Validation: Stack not empty at end of bytecode" << std::endl;
         return false;
@@ -190,7 +261,6 @@ bool MoneroVM::validate_bytecode(const std::vector<uint8_t>& bytecode) {
     std::cout << "Bytecode validation successful. Max stack size was " << max_stack_size << std::endl;
     return true;
 }
-
 
 // Get the remaining gas
 uint64_t MoneroVM::get_remaining_gas() const {

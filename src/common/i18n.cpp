@@ -34,7 +34,6 @@
 #include <map>
 #include "file_io_utils.h"
 #include "common/i18n.h"
-#include "translation_files.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "i18n"
@@ -327,5 +326,4 @@ const char *i18n_translate(const char *s, const std::string &context)
     return s;
   return (*i).second.c_str();
 }
-
 

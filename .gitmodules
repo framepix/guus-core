@@ -1,6 +1,3 @@
-[submodule "external/loki-mq"]
-	path = external/loki-mq
-	url = https://github.com/oxen-io/oxen-mq
 [submodule "external/miniupnp"]
 	path = external/miniupnp
 	url = https://github.com/monero-project/miniupnp

@@ -793,7 +793,7 @@ namespace frame_pixs
     std::vector<cryptonote::account_public_address> frame_pix_addresses;
     std::vector<uint64_t> frame_pix_portions;
     uint64_t portions_for_operator;
-    uint64_t expiration_timestamp;
+    uint64_t expiration_timestamp{0};
     crypto::signature signature;
 
     if (!reg_tx_extract_fields(tx, frame_pix_addresses, portions_for_operator, frame_pix_portions, expiration_timestamp, frame_pix_key, signature))
@@ -1861,11 +1861,14 @@ namespace frame_pixs
     m_transient.cache_data_blob.clear();
     if (m_transient.state_added_to_archive)
     {
-      std::stringstream ss;
-      binary_archive<true> ba(ss);
-      bool r = ::serialization::serialize(ba, m_transient.cache_long_term_data);
-      CHECK_AND_ASSERT_MES(r, false, "Failed to store service node info: failed to serialize long term data");
-      m_transient.cache_data_blob.append(ss.str());
+      serialization::binary_string_archiver ba;
+      try {
+        serialization::serialize(ba, m_transient.cache_long_term_data);
+      } catch (const std::exception& e) {
+        LOG_ERROR("Failed to store service node info: failed to serialize long term data: " << e.what());
+        return false;
+      }
+      m_transient.cache_data_blob.append(ba.str());
       {
         auto &db = m_blockchain.get_db();
         cryptonote::db_wtxn_guard txn_guard{db};
@@ -1875,11 +1878,14 @@ namespace frame_pixs
 
     m_transient.cache_data_blob.clear();
     {
-      std::stringstream ss;
-      binary_archive<true> ba(ss);
-      bool r = ::serialization::serialize(ba, m_transient.cache_short_term_data);
-      CHECK_AND_ASSERT_MES(r, false, "Failed to store service node info: failed to serialize short term data data");
-      m_transient.cache_data_blob.append(ss.str());
+      serialization::binary_string_archiver ba;
+      try {
+        serialization::serialize(ba, m_transient.cache_short_term_data);
+      } catch (const std::exception& e) {
+        LOG_ERROR("Failed to store service node info: failed to serialize short term data: " << e.what());
+        return false;
+      }
+      m_transient.cache_data_blob.append(ba.str());
       {
         auto &db = m_blockchain.get_db();
         cryptonote::db_wtxn_guard txn_guard{db};
@@ -1891,15 +1897,24 @@ namespace frame_pixs
     return true;
   }
 
-  static crypto::hash hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, uint8_t hf_version)
-  {
-    auto buf = tools::memcpy_le(proof.pubkey.data, proof.timestamp, proof.pubkey_ed25519.data);
-    size_t buf_size = buf.size();
-
-    crypto::hash result;
-    crypto::cn_fast_hash(buf.data(), buf_size, result);
-    return result;
-  }
+static crypto::hash hash_uptime_proof(const cryptonote::NOTIFY_UPTIME_PROOF::request &proof, uint8_t hf_version)
+{
+  // Assuming proof.pubkey and proof.pubkey_ed25519 are of type std::array or similar with known sizes
+  std::array<char, sizeof(proof.pubkey.data) + sizeof(proof.timestamp) + sizeof(proof.pubkey_ed25519.data)> buf;
+  size_t offset = 0;
+  // Copy pubkey data
+  std::memcpy(buf.data() + offset, proof.pubkey.data, sizeof(proof.pubkey.data));
+  offset += sizeof(proof.pubkey.data);
+  // Copy timestamp
+  std::memcpy(buf.data() + offset, &proof.timestamp, sizeof(proof.timestamp));
+  offset += sizeof(proof.timestamp);
+  // Copy pubkey_ed25519 data
+  std::memcpy(buf.data() + offset, proof.pubkey_ed25519.data, sizeof(proof.pubkey_ed25519.data));
+  size_t buf_size = buf.size();
+  crypto::hash result;
+  crypto::cn_fast_hash(buf.data(), buf_size, result);
+  return result;
+}
 
   cryptonote::NOTIFY_UPTIME_PROOF::request frame_pix_list::generate_uptime_proof(
       const frame_pix_keys &keys) const
@@ -2181,13 +2196,14 @@ namespace frame_pixs
     if (db.get_frame_pix_data(blob, true /*long_term*/))
     {
       bytes_loaded += blob.size();
-      std::stringstream ss;
-      ss << blob;
-      blob.clear();
-      binary_archive<false> ba(ss);
 
       data_for_serialization data_in = {};
-      if (::serialization::serialize(ba, data_in) && data_in.states.size())
+      bool success = false;
+      try {
+        serialization::parse_binary(blob, data_in);
+        success = true;
+      } catch (...) {}
+      if (success && data_in.states.size())
       {
         // NOTE: Previously the quorum for the next state is derived from the
         // state that's been updated from the next block. This is fixed in
@@ -2252,14 +2268,13 @@ namespace frame_pixs
     if (!db.get_frame_pix_data(blob, false))
       return false;
 
-    bytes_loaded += blob.size();
-    std::stringstream ss;
-    ss << blob;
-    binary_archive<false> ba(ss);
-
     data_for_serialization data_in = {};
-    bool deserialized              = ::serialization::serialize(ba, data_in);
-    CHECK_AND_ASSERT_MES(deserialized, false, "Failed to parse service node data from blob");
+    try {
+      serialization::parse_binary(blob, data_in);
+    } catch (const std::exception& e) {
+      LOG_ERROR("Failed to parse service node data from blob: " << e.what());
+      return false;
+    }
 
     if (data_in.states.empty())
       return false;

@@ -243,7 +243,7 @@ namespace tools
     std::wstring filename_wide;
     try
     {
-      filename_wide = string_tools::utf8_to_utf16(filename);
+      filename_wide = epee::string_tools::utf8_to_utf16(filename);
     }
     catch (const std::exception &e)
     {
@@ -584,7 +584,7 @@ std::string get_nix_version_display_string()
     {
       try
       {
-        return string_tools::utf16_to_utf8(psz_path);
+        return epee::string_tools::utf16_to_utf8(psz_path);
       }
       catch (const std::exception &e)
       {
@@ -652,10 +652,10 @@ std::string get_nix_version_display_string()
 #if defined(WIN32)
     // Maximizing chances for success
     std::wstring wide_replacement_name;
-    try { wide_replacement_name = string_tools::utf8_to_utf16(old_name); }
+    try { wide_replacement_name = epee::string_tools::utf8_to_utf16(old_name); }
     catch (...) { return std::error_code(GetLastError(), std::system_category()); }
     std::wstring wide_replaced_name;
-    try { wide_replaced_name = string_tools::utf8_to_utf16(new_name); }
+    try { wide_replaced_name = epee::string_tools::utf8_to_utf16(new_name); }
     catch (...) { return std::error_code(GetLastError(), std::system_category()); }
 
     DWORD attributes = ::GetFileAttributesW(wide_replaced_name.c_str());
@@ -672,6 +672,21 @@ std::string get_nix_version_display_string()
 #endif
     return std::error_code(code, std::system_category());
   }
+
+ /* static bool unbound_built_with_threads()
+  {
+    ub_ctx *ctx = ub_ctx_create();
+    if (!ctx) return false; // cheat a bit, should not happen unless OOM
+    char *guus = strdup("guus"), *unbound = strdup("unbound");
+    ub_ctx_zone_add(ctx, guus, unbound); // this calls ub_ctx_finalize first, then errors out with UB_SYNTAX
+    free(unbound);
+    free(guus);
+    // if no threads, bails out early with UB_NOERROR, otherwise fails with UB_AFTERFINAL id already finalized
+    bool with_threads = ub_ctx_async(ctx, 1) != 0; // UB_AFTERFINAL is not defined in public headers, check any error
+    ub_ctx_delete(ctx);
+    MINFO("libunbound was built " << (with_threads ? "with" : "without") << " threads");
+    return with_threads;
+  }*/
 
   static bool unbound_built_with_threads()
   {

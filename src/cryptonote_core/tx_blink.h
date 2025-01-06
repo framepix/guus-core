@@ -55,6 +55,7 @@ public:
 
     class tx_hash_visitor : public boost::static_visitor<crypto::hash> {
     public:
+        tx_hash_visitor() = default;
         crypto::hash operator()(const crypto::hash &h) const { return h; }
         crypto::hash operator()(const transaction &tx) const;
     };
@@ -62,8 +63,7 @@ public:
     /// The blink transaction *or* hash.  The transaction is present when building a blink tx for
     /// blink quorum signing; for regular blink txes received via p2p this will contain the hash
     /// instead.
-    boost::variant<transaction, crypto::hash> tx;
-
+    std::variant<transaction, crypto::hash> tx;
     /// Returns the transaction hash
     crypto::hash get_txhash() const { return boost::apply_visitor(tx_hash_visitor{}, tx); }
 
