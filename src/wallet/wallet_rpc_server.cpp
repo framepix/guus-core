@@ -36,7 +36,6 @@
 #include <cstdint>
 #include "include_base_utils.h"
 #include <chrono>
-using namespace epee;
 
 #include "wallet_rpc_server.h"
 #include "wallet/wallet_args.h"
@@ -56,11 +55,15 @@ using namespace epee;
 #include "rpc/core_rpc_server.h"
 #include "daemonizer/daemonizer.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "serialization/boost_std_variant.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "wallet.rpc"
 
 #define DEFAULT_AUTO_REFRESH_PERIOD 20 // seconds
+
+namespace rpc = cryptonote::rpc;
+using namespace tools::wallet_rpc;
 
 namespace
 {
@@ -230,7 +233,7 @@ namespace tools
         crypto::rand(rand_128bit.size(), rand_128bit.data());
         http_login.emplace(
           default_rpc_username,
-          string_encoding::base64_encode(rand_128bit.data(), rand_128bit.size())
+          epee::string_encoding::base64_encode(rand_128bit.data(), rand_128bit.size())
         );
 
         std::string temp = "guus-wallet-rpc." + bind_port + ".login";
@@ -736,7 +739,7 @@ namespace tools
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  static std::string ptx_to_string(const tools::wallet2::pending_tx &ptx)
+  static std::string ptx_to_string(const wallet2::pending_tx &ptx)
   {
     std::ostringstream oss;
     boost::archive::portable_binary_oarchive ar(oss);

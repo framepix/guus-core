@@ -956,25 +956,7 @@ namespace cryptonote
     if (tx_extra.empty())
       return true;
    serialization::binary_string_unarchiver ar{tx_extra};
-    serialization::binary_string_archiver newar;
-    try {
-      do
-      {
-        tx_extra_field field;
-        value(ar, field);
-        if (field.index() != variant_index)
-          value(newar, field);
-      } while (ar.remaining_bytes() > 0);
-    } catch (const std::exception& e) {
-      LOG_PRINT_L1(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << lokimq::to_hex(tx_extra.begin(), tx_extra.end()));
-      return false;
-    }
-    std::string s = newar.str();
-    tx_extra.clear();
-    tx_extra.reserve(s.size());
-    std::copy(s.begin(), s.end(), std::back_inserter(tx_extra));
-    return true;
-  }
+    serialization::binary_string_archiver
   //---------------------------------------------------------------
   void set_payment_id_to_tx_extra_nonce(blobdata& extra_nonce, const crypto::hash& payment_id)
   {
@@ -1511,241 +1493,121 @@ namespace cryptonote
     }
     size_t size = sizeof(uint64_t) + addresses.size() * (sizeof(cryptonote::account_public_address) + sizeof(uint64_t)) + sizeof(uint64_t);
     std::string buffer;
-    buffer.reserve(size);
-    buffer += tools::view_guts(operator_portions);
-    for (size_t i = 0; i < addresses.size(); i++)
+    buffer.reserve(size)ctions hash different parts together, than hash the set of those hashes
+    crypto::hash hashes[3];
+
+    // prefix
+    get_transaction_prefix_hash(t, hashes[0]);
+
+    transaction &tt = const_cast<transaction&>(t);
+
+    // base rct
     {
-      buffer += tools::view_guts(addresses[i]);
-      buffer += tools::view_guts(portions[i]);
+      serialization::binary_string_archiver ba;
+      const size_t inputs = t.vin.size();
+      const size_t outputs = t.vout.size();
+      tt.rct_signatures.serialize_rctsig_base(ba, inputs, outputs); // throws on error (good)
+      cryptonote::get_blob_hash(ba.str(), hashes[1]);
     }
-    buffer += tools::view_guts(expiration_timestamp);
-    assert(buffer.size() == size);
-    crypto::cn_fast_hash(buffer.data(), buffer.size(), hash);
-    return true;
+
+    // prunable rct
+    if (t.rct_signatures.type == rct::RCTTypeNull)
+      hashes[2] = crypto::null_hash;
+    else
+      hashes[2] = pruned_data_hash;
+
+    // the tx hash is the hash of the 3 hashes
+    crypto::hash res = cn_fast_hash(hashes, sizeof(hashes));
+    return res;
   }
   //---------------------------------------------------------------
-  bool get_transaction_hash(const transaction& t, crypto::hash& res, size_t* blob_size)
+  bool calculate_transaction_hash(const transaction& t, crypto::hash& res, size_t* blob_size)
   {
-    if (t.is_hash_valid())
+    // v1 transactions hash the entire blob
+    if (t.version == txversion::v1)
     {
-#ifdef ENABLE_HASH_CASH_INTEGRITY_CHECK
-      CHECK_AND_ASSERT_THROW_MES(!calculate_transaction_hash(t, res, blob_size) || t.hash == res, "tx hash cash integrity failure");
-#endif
-      res = t.hash;
-      if (blob_size)
-      {
-        if (!t.is_blob_size_valid())
-        {
-          t.blob_size = get_object_blobsize(t);
-          t.set_blob_size_valid(true);
-        }
-        *blob_size = t.blob_size;
-      }
-      ++tx_hashes_cached_count;
-      return true;
+      size_t ignored_blob_size, &blob_size_ref = blob_size ? *blob_size : ignored_blob_size;
+      return get_object_hash(t, res, blob_size_ref);
     }
-    ++tx_hashes_calculated_count;
-    bool ret = calculate_transaction_hash(t, res, blob_size);
-    if (!ret)
+
+    // v2 transactions hash different parts together, than hash the set of those hashes
+    crypto::hash hashes[3];
+
+    // prefix
+    get_transaction_prefix_hash(t, hashes[0]);
+
+    const blobdata blob = tx_to_blob(t);
+
+    // TODO(guus): Not sure if this is the right fix, we may just want to set
+    // unprunable size to the size of the prefix because technically that is
+    // what it is and then keep this code path.
+    if (t.is_transfer())
+    {
+      const unsigned int unprunable_size = t.unprunable_size;
+      const unsigned int prefix_size = t.prefix_size;
+
+      // base rct
+      CHECK_AND_ASSERT_MES(prefix_size <= unprunable_size && unprunable_size <= blob.size(), false, "Inconsistent transaction prefix, unprunable and blob sizes in: " << __func__);
+      cryptonote::get_blob_hash(std::string_view{blob}.substr(prefix_size, unprunable_size - prefix_size), hashes[1]);
+    }
+    else
+    {
+      transaction &tt = const_cast<transaction&>(t);
+      serialization::binary_string_archiver ba;
+      try {
+        tt.rct_signatures.serialize_rctsig_base(ba, t.vin.size(), t.vout.size());
+      } catch (const std::exception& e) {
+        LOG_ERROR("Failed to serialize rct signatures base: " << e.what());
+        return false;
+      }
+      cryptonote::get_blob_hash(ba.str(), hashes[1]);
+    }
+
+    // prunable rct
+    if (t.rct_signatures.type == rct::RCTTypeNull)
+    {
+      hashes[2] = crypto::null_hash;
+    }
+    else if (!calculate_transaction_prunable_hash(t, &blob, hashes[2]))
+    {
+      LOG_ERROR("Failed to get tx prunable hash");
       return false;
-    t.hash = res;
-    t.set_hash_valid(true);
+    }
+
+    // the tx hash is the hash of the 3 hashes
+    res = cn_fast_hash(hashes, sizeof(hashes));
+
+    // we still need the size
     if (blob_size)
     {
-      t.blob_size = *blob_size;
-      t.set_blob_size_valid(true);
+      if (!t.is_blob_size_valid())
+      {
+        t.blob_size = blob.size();
+        t.set_blob_size_valid(true);
+      }
+      *blob_size = t.blob_size;
     }
-    return true;
-  }
-  //---------------------------------------------------------------
-  bool get_transaction_hash(const transaction& t, crypto::hash& res, size_t& blob_size)
-  {
-    return get_transaction_hash(t, res, &blob_size);
-  }
-  //---------------------------------------------------------------
-  blobdata get_block_hashing_blob(const block& b)
-  {
-    blobdata blob = t_serializable_object_to_blob(static_cast<block_header>(b));
-    crypto::hash tree_root_hash = get_tx_tree_hash(b);
-    blob.append(reinterpret_cast<const char*>(&tree_root_hash), sizeof(tree_root_hash));
-    blob.append(tools::get_varint_data(b.tx_hashes.size()+1));
-    return blob;
-  }
-  //---------------------------------------------------------------
-  bool calculate_block_hash(const block& b, crypto::hash& res)
-  {
-    bool hash_result = get_object_hash(get_block_hashing_blob(b), res);
-    return hash_result;
-  }
-  //---------------------------------------------------------------
-  bool get_block_hash(const block& b, crypto::hash& res)
-  {
-    if (b.is_hash_valid())
-    {
-      res = b.hash;
-      ++block_hashes_cached_count;
-      return true;
-    }
-    ++block_hashes_calculated_count;
-    bool ret = calculate_block_hash(b, res);
-    if (!ret)
-      return false;
-    b.hash = res;
-    b.set_hash_valid(true);
-    return true;
-  }
-  //---------------------------------------------------------------
-  crypto::hash get_block_hash(const block& b)
-  {
-    crypto::hash p = null_hash;
-    get_block_hash(b, p);
-    return p;
-  }
-  //---------------------------------------------------------------
-  std::vector<uint64_t> relative_output_offsets_to_absolute(const std::vector<uint64_t>& off)
-  {
-    std::vector<uint64_t> res = off;
-    for(size_t i = 1; i < res.size(); i++)
-      res[i] += res[i-1];
-    return res;
-  }
-  //---------------------------------------------------------------
-  std::vector<uint64_t> absolute_output_offsets_to_relative(const std::vector<uint64_t>& off)
-  {
-    std::vector<uint64_t> res = off;
-    if(!off.size())
-      return res;
-    std::sort(res.begin(), res.end());//just to be sure, actually it is already should be sorted
-    for(size_t i = res.size()-1; i != 0; i--)
-      res[i] -= res[i-1];
 
-    return res;
+    return true;
   }
   //---------------------------------------------------------------
-  [[nodiscard]] bool parse_and_validate_block_from_blob(const std::string_view b_blob, block& b, crypto::hash* block_hash)
+  bool get_registration_hash(const std::vector<cryptonote::account_public_address>& addresses, uint64_t operator_portions, const std::vector<uint64_t>& portions, uint64_t expiration_timestamp, crypto::hash& hash)
   {
-    serialization::binary_string_unarchiver ba{b_blob};
-    try {
-      serialization::serialize(ba, b);
-    } catch (const std::exception& e) {
-      LOG_ERROR("Failed to parse block from blob: " << e.what());
+    if (addresses.size() != portions.size())
+    {
+      LOG_ERROR("get_registration_hash addresses.size() != portions.size()");
       return false;
     }
-    b.invalidate_hashes();
-    b.miner_tx.invalidate_hashes();
-    if (block_hash)
+    uint64_t portions_left = STAKING_PORTIONS;
+    for (uint64_t portion : portions)
     {
-      calculate_block_hash(b, *block_hash);
-      ++block_hashes_calculated_count;
-      b.hash = *block_hash;
-      b.set_hash_valid(true);
+      if (portion > portions_left)
+      {
+        LOG_ERROR(tr("Your registration has more than ") << STAKING_PORTIONS << tr(" portions, this registration is invalid!"));
+        return false;
+      }
+      portions_left -= portion;
     }
-    return true;
-  }
-  //------------------------------------------------------------
-  bool parse_and_validate_block_from_blob(const std::string_view b_blob, block& b)
-  {
-    return parse_and_validate_block_from_blob(b_blob, b, nullptr);
-  }
-  //---------------------------------------------------------------
-  bool parse_and_validate_block_from_blob(const std::string_view b_blob, block& b, crypto::hash& block_hash)
-  {
-    return parse_and_validate_block_from_blob(b_blob, b, &block_hash);
-  }
-  //---------------------------------------------------------------
-  blobdata block_to_blob(const block& b)
-  {
-    return t_serializable_object_to_blob(b);
-  }
-  //---------------------------------------------------------------
-  bool block_to_blob(const block& b, blobdata& b_blob)
-  {
-    return t_serializable_object_to_blob(b, b_blob);
-  }
-  //---------------------------------------------------------------
-  blobdata tx_to_blob(const transaction& tx)
-  {
-    return t_serializable_object_to_blob(tx);
-  }
-  //---------------------------------------------------------------
-  bool tx_to_blob(const transaction& tx, blobdata& b_blob)
-  {
-    return t_serializable_object_to_blob(tx, b_blob);
-  }
-  //---------------------------------------------------------------
-  void get_tx_tree_hash(const std::vector<crypto::hash>& tx_hashes, crypto::hash& h)
-  {
-    tree_hash(tx_hashes.data(), tx_hashes.size(), h);
-  }
-  //---------------------------------------------------------------
-  crypto::hash get_tx_tree_hash(const std::vector<crypto::hash>& tx_hashes)
-  {
-    crypto::hash h = null_hash;
-    get_tx_tree_hash(tx_hashes, h);
-    return h;
-  }
-  //---------------------------------------------------------------
-  crypto::hash get_tx_tree_hash(const block& b)
-  {
-    std::vector<crypto::hash> txs_ids;
-    txs_ids.reserve(1 + b.tx_hashes.size());
-    crypto::hash h = null_hash;
-    size_t bl_sz = 0;
-    CHECK_AND_ASSERT_THROW_MES(get_transaction_hash(b.miner_tx, h, bl_sz), "Failed to calculate transaction hash");
-    txs_ids.push_back(h);
-    for(auto& th: b.tx_hashes)
-      txs_ids.push_back(th);
-    return get_tx_tree_hash(txs_ids);
-  }
-  //---------------------------------------------------------------
-  bool is_valid_decomposed_amount(uint64_t amount)
-  {
-    const uint64_t *begin = valid_decomposed_outputs;
-    const uint64_t *end = valid_decomposed_outputs + sizeof(valid_decomposed_outputs) / sizeof(valid_decomposed_outputs[0]);
-    return std::binary_search(begin, end, amount);
-  }
-  //---------------------------------------------------------------
-  void get_hash_stats(uint64_t &tx_hashes_calculated, uint64_t &tx_hashes_cached, uint64_t &block_hashes_calculated, uint64_t & block_hashes_cached)
-  {
-    tx_hashes_calculated = tx_hashes_calculated_count;
-    tx_hashes_cached = tx_hashes_cached_count;
-    block_hashes_calculated = block_hashes_calculated_count;
-    block_hashes_cached = block_hashes_cached_count;
-  }
-  //---------------------------------------------------------------
-  crypto::secret_key encrypt_key(crypto::secret_key key, const epee::wipeable_string &passphrase)
-  {
-    crypto::hash hash;
-    crypto::cn_slow_hash(passphrase.data(), passphrase.size(), hash, crypto::cn_slow_hash_type::heavy_v1);
-    sc_add((unsigned char*)key.data, (const unsigned char*)key.data, (const unsigned char*)hash.data);
-    return key;
-  }
-  //---------------------------------------------------------------
-  crypto::secret_key decrypt_key(crypto::secret_key key, const epee::wipeable_string &passphrase)
-  {
-    crypto::hash hash;
-    crypto::cn_slow_hash(passphrase.data(), passphrase.size(), hash, crypto::cn_slow_hash_type::heavy_v1);
-    sc_sub((unsigned char*)key.data, (const unsigned char*)key.data, (const unsigned char*)hash.data);
-    return key;
-  }
-
-}
-
-std::string lns::generic_owner::to_string(cryptonote::network_type nettype) const
-{
-  if (type == lns::generic_owner_sig_type::monero)
-    return cryptonote::get_account_address_as_str(nettype, wallet.is_subaddress, wallet.address);
-  else
-    return epee::to_hex::string(epee::as_byte_span(ed25519));
-}
-
-bool lns::generic_owner::operator==(generic_owner const &other) const
-{
-  if (type != other.type)
-    return false;
-
-  if (type == lns::generic_owner_sig_type::monero)
-    return wallet.is_subaddress == other.wallet.is_subaddress && wallet.address == other.wallet.address;
-  else
-    return ed25519 == other.ed25519;
-}
+    size_t size = sizeof(uint64_t) + addresses.size() * (sizeof(cryptonote::account_public_address) + sizeof(uint64_t)) + sizeof(uint64_t);
+    std::string buffer;
+    buffer.reserve(size)

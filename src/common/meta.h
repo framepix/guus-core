@@ -13,6 +13,33 @@ namespace tools {
 
 using namespace std::literals;
 
+namespace detail {
+
+template <typename T, typename T1, typename... Ts>
+constexpr size_t template_index_impl_inner() {
+    if constexpr (std::is_same_v<T, T1>) return 0;
+    else {
+        static_assert(sizeof...(Ts) > 0, "Type not found");
+        return 1 + template_index_impl_inner<T, Ts...>();
+    }
+}
+
+template <typename T, typename C> struct template_index_impl {};
+
+template <typename T, template<typename...> typename C, typename... Ts>
+struct template_index_impl<T, C<Ts...>> : std::integral_constant<size_t, template_index_impl_inner<T, Ts...>()> {};
+
+} // namespace detail
+
+/// Accesses the index of the first T within a template type's type list.  E.g.
+///
+///     template_index<int, std::variant<double, short, int>>() == 2
+///
+/// Fails at compile time if T is not in any of the type's class list.
+template <typename T, typename C>
+constexpr size_t template_index = detail::template_index_impl<T, C>::value;
+
+
 /// Returns true if the first string is equal to the second string, compared case-insensitively.
 inline bool string_iequal(std::string_view s1, std::string_view s2) {
   return std::equal(s1.begin(), s1.end(), s2.begin(), s2.end(), [](char a, char b) {

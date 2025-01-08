@@ -38,6 +38,7 @@
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "serialization/binary_utils.h"
+#include "common/meta.h"
 #include <unordered_map>
 #include <variant>
 
@@ -92,6 +93,16 @@ namespace cryptonote
 
   bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields);
   bool sort_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<uint8_t>& sorted_tx_extra);
+
+  template <typename T>
+  bool get_field_from_tx_extra(const std::vector<uint8_t>& tx_extra, T& field, size_t skip = 0)
+  {
+    std::vector<tx_extra_field> tx_extra_fields;
+    return
+      parse_tx_extra(tx_extra, tx_extra_fields) &&
+      find_tx_extra_field_by_type(tx_extra_fields, field, skip);
+  }
+
   crypto::public_key get_tx_pub_key_from_extra(const std::vector<uint8_t>& tx_extra, size_t pk_index = 0);
   crypto::public_key get_tx_pub_key_from_extra(const transaction_prefix& tx, size_t pk_index = 0);
   crypto::public_key get_tx_pub_key_from_extra(const transaction& tx, size_t pk_index = 0);
@@ -127,6 +138,11 @@ namespace cryptonote
   bool add_additional_tx_pub_keys_to_extra(std::vector<uint8_t>& tx_extra, const std::vector<crypto::public_key>& additional_pub_keys);
   bool add_extra_nonce_to_tx_extra(std::vector<uint8_t>& tx_extra, const blobdata& extra_nonce);
   bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra, const std::type_info &type);
+  bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra, size_t variant_index);
+  template <typename T>
+  bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra) {
+    return remove_field_from_tx_extra(tx_extra, tools::template_index<T, tx_extra_field>);
+  }
   void set_payment_id_to_tx_extra_nonce(blobdata& extra_nonce, const crypto::hash& payment_id);
   void set_encrypted_payment_id_to_tx_extra_nonce(blobdata& extra_nonce, const crypto::hash8& payment_id);
   bool get_payment_id_from_tx_extra_nonce(const blobdata& extra_nonce, crypto::hash& payment_id);
@@ -163,7 +179,7 @@ namespace cryptonote
   crypto::hash get_pruned_transaction_hash(const transaction& t, const crypto::hash &pruned_data_hash);
 
   blobdata get_block_hashing_blob(const block& b);
-  bool calculate_block_hash(const block& b, crypto::hash& res, const blobdata *blob = NULL);
+  bool calculate_block_hash(const block& b, crypto::hash& res);
   bool get_block_hash(const block& b, crypto::hash& res);
   crypto::hash get_block_hash(const block& b);
   bool parse_and_validate_block_from_blob(const std::string_view b_blob, block& b, crypto::hash *block_hash);

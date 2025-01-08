@@ -177,7 +177,7 @@ sql_compiled_statement& operator=(sql_compiled_statement&& from) noexcept;
 
   /// Attempts to prepare the given statement.  MERRORs and returns false on failure.  If the object
   /// already has a prepare statement then it is finalized first.
-  bool compile(lokimq::string_view query, bool optimise_for_multiple_usage = true);
+  bool compile(std::string_view query, bool optimise_for_multiple_usage = true);
 
   template <size_t N>
   bool compile(const char (&query)[N], bool optimise_for_multiple_usage = true)

@@ -362,6 +362,11 @@ private:
       AskPasswordToDecrypt = 2,
     };
 
+    enum ExportFormat {
+      Binary = 0,
+      Ascii,
+    };
+
     enum BackgroundMiningSetupType {
       BackgroundMiningMaybe = 0,
       BackgroundMiningYes = 1,
@@ -461,7 +466,9 @@ private:
 
       bool is_rct() const { return m_rct; }
       uint64_t amount() const { return m_amount; }
-      const crypto::public_key &get_public_key() const { return boost::get<const cryptonote::txout_to_key>(m_tx.vout[m_internal_output_index].target).key; }
+      const crypto::public_key& get_public_key() const {
+    return std::get<cryptonote::txout_to_key>(m_tx.vout[m_internal_output_index].target).key;
+}
 
       BEGIN_SERIALIZE_OBJECT()
         FIELD(m_block_height)
@@ -851,6 +858,13 @@ private:
      */
     void store_to(const std::string &path, const epee::wipeable_string &password);
 
+    /*!
+     * \brief get_cache_file_data   Get wallet cache data which can be stored to a wallet file.
+     * \param password              Password to protect the wallet cache data (TODO: probably better save the password in the wallet object?)
+     * \return                      Encrypted wallet cache data which can be stored to a wallet file
+     */
+    std::optional<wallet2::cache_file_data> get_cache_file_data(const epee::wipeable_string& password);
+
     std::string path() const;
 
     /*!
@@ -1115,7 +1129,7 @@ private:
         {
           const transfer_details &td = m_transfers[i];
           const cryptonote::tx_out &out = td.m_tx.vout[td.m_internal_output_index];
-          const cryptonote::txout_to_key &o = boost::get<const cryptonote::txout_to_key>(out.target);
+          const auto &o = std::get<cryptonote::txout_to_key>(out.target);
           m_pub_keys.emplace(o.key, i);
         }
         return;
@@ -1231,6 +1245,8 @@ private:
     void device_name(const std::string & device_name) { m_device_name = device_name; }
     const std::string & device_derivation_path() const { return m_device_derivation_path; }
     void device_derivation_path(const std::string &device_derivation_path) { m_device_derivation_path = device_derivation_path; }
+    const ExportFormat & export_format() const { return m_export_format; }
+    void set_export_format(const ExportFormat& export_format) { m_export_format = export_format; }
 
     bool get_tx_key_cached(const crypto::hash &txid, crypto::secret_key &tx_key, std::vector<crypto::secret_key> &additional_tx_keys) const;
     void set_tx_key(const crypto::hash &txid, const crypto::secret_key &tx_key, const std::vector<crypto::secret_key> &additional_tx_keys);
@@ -1574,7 +1590,7 @@ private:
     void thaw(const crypto::key_image &ki);
     bool frozen(const crypto::key_image &ki) const;
     bool frozen(const transfer_details &td) const;
-
+    bool save_to_file(const std::string& path_to_file, const std::string& binary, bool is_printable = false) const;
     uint64_t get_bytes_sent() const;
     uint64_t get_bytes_received() const;
 
@@ -1839,6 +1855,7 @@ private:
 
     std::shared_ptr<tools::Notify> m_tx_notify;
     std::unique_ptr<wallet_device_callback> m_device_callback;
+    ExportFormat m_export_format;
   };
 
   // TODO(guus): Hmm. We need this here because we make register_frame_pix do

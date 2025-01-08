@@ -59,9 +59,9 @@ bool tx_sanity_check(Blockchain &blockchain, const cryptonote::blobdata &tx_blob
 
   for (const auto &txin : tx.vin)
   {
-    if (txin.type() != typeid(cryptonote::txin_to_key))
+    if (!std::holds_alternative<cryptonote::txin_to_key>(txin))
       continue;
-    const cryptonote::txin_to_key &in_to_key = boost::get<cryptonote::txin_to_key>(txin);
+    const auto &in_to_key = std::get<cryptonote::txin_to_key>(txin);
     if (in_to_key.amount != 0)
       continue;
     const std::vector<uint64_t> absolute = cryptonote::relative_output_offsets_to_absolute(in_to_key.key_offsets);

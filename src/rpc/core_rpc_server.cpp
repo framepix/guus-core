@@ -35,7 +35,6 @@
 #include <cstring>
 #include "include_base_utils.h"
 #include "string_tools.h"
-using namespace epee;
 
 #include "core_rpc_server.h"
 #include "common/command_line.h"
@@ -183,7 +182,7 @@ namespace cryptonote
     crypto::hash hash;
     m_core.get_blockchain_top(res.height, hash);
     ++res.height; // block height to chain height
-    res.hash = string_tools::pod_to_hex(hash);
+    res.hash = epee::string_tools::pod_to_hex(hash);
     res.status = CORE_RPC_STATUS_OK;
 
     res.immutable_height = 0;
@@ -191,7 +190,7 @@ namespace cryptonote
     if (m_core.get_blockchain_storage().get_db().get_immutable_checkpoint(&checkpoint, res.height - 1))
     {
       res.immutable_height = checkpoint.height;
-      res.immutable_hash   = string_tools::pod_to_hex(checkpoint.block_hash);
+      res.immutable_hash   = epee::string_tools::pod_to_hex(checkpoint.block_hash);
     }
 
     return true;
@@ -216,7 +215,7 @@ namespace cryptonote
     crypto::hash top_hash;
     m_core.get_blockchain_top(res.height, top_hash);
     ++res.height; // turn top block height into blockchain height
-    res.top_block_hash = string_tools::pod_to_hex(top_hash);
+    res.top_block_hash = epee::string_tools::pod_to_hex(top_hash);
     res.target_height = m_core.get_target_blockchain_height();
 
     res.immutable_height = 0;
@@ -224,7 +223,7 @@ namespace cryptonote
     if (m_core.get_blockchain_storage().get_db().get_immutable_checkpoint(&checkpoint, res.height - 1))
     {
       res.immutable_height     = checkpoint.height;
-      res.immutable_block_hash = string_tools::pod_to_hex(checkpoint.block_hash);
+      res.immutable_block_hash = epee::string_tools::pod_to_hex(checkpoint.block_hash);
     }
 
     res.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block();
@@ -280,14 +279,12 @@ namespace cryptonote
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  static cryptonote::blobdata get_pruned_tx_blob(cryptonote::transaction &tx)
-  {
+  static cryptonote::blobdata get_pruned_tx_blob(cryptonote::transaction &tx) {
     std::stringstream ss;
-    binary_archive<true> ba(ss);
-    bool r = tx.serialize_base(ba);
-    CHECK_AND_ASSERT_MES(r, cryptonote::blobdata(), "Failed to serialize rct signatures base");
+    serialization::binary_archiver ba(ss); // Use binary_archiver directly
+    tx.serialize_base(ba); // Just call the method directly
     return ss.str();
-  }
+   }
   //------------------------------------------------------------------------------------------------------------------------------
   static cryptonote::blobdata get_pruned_tx_blob(const cryptonote::blobdata &blobdata)
   {
@@ -570,7 +567,7 @@ namespace cryptonote
     for(const auto& tx_hex_str: req.txs_hashes)
     {
       blobdata b;
-      if(!string_tools::parse_hexstr_to_binbuff(tx_hex_str, b))
+      if(!epee::string_tools::parse_hexstr_to_binbuff(tx_hex_str, b))
       {
         res.status = "Failed to parse hex representation of transaction hash";
         return true;
@@ -674,9 +671,9 @@ namespace cryptonote
       if (req.split || req.prune || std::get<3>(tx).empty())
       {
         // use splitted form with pruned and prunable (filled only when prune=false and the daemon has it), leaving as_hex as empty
-        e.pruned_as_hex = string_tools::buff_to_hex_nodelimer(std::get<1>(tx));
+        e.pruned_as_hex = epee::string_tools::buff_to_hex_nodelimer(std::get<1>(tx));
         if (!req.prune)
-          e.prunable_as_hex = string_tools::buff_to_hex_nodelimer(std::get<3>(tx));
+          e.prunable_as_hex = epee::string_tools::buff_to_hex_nodelimer(std::get<3>(tx));
         if (req.decode_as_json)
         {
           cryptonote::blobdata tx_data;
@@ -716,7 +713,7 @@ namespace cryptonote
       {
         // use non-splitted form, leaving pruned_as_hex and prunable_as_hex as empty
         cryptonote::blobdata tx_data = std::get<1>(tx) + std::get<3>(tx);
-        e.as_hex = string_tools::buff_to_hex_nodelimer(tx_data);
+        e.as_hex = epee::string_tools::buff_to_hex_nodelimer(tx_data);
         if (req.decode_as_json)
         {
           cryptonote::transaction t;
@@ -775,7 +772,7 @@ namespace cryptonote
 
     for(const auto& miss_tx: missed_txs)
     {
-      res.missed_tx.push_back(string_tools::pod_to_hex(miss_tx));
+      res.missed_tx.push_back(epee::string_tools::pod_to_hex(miss_tx));
     }
 
     LOG_PRINT_L2(res.txs.size() << " transactions found, " << res.missed_tx.size() << " not found");
@@ -796,7 +793,7 @@ namespace cryptonote
     for(const auto& ki_hex_str: req.key_images)
     {
       blobdata b;
-      if(!string_tools::parse_hexstr_to_binbuff(ki_hex_str, b))
+      if(!epee::string_tools::parse_hexstr_to_binbuff(ki_hex_str, b))
       {
         res.status = "Failed to parse hex representation of key image";
         return true;
@@ -862,7 +859,7 @@ namespace cryptonote
     CHECK_CORE_READY();
 
     std::string tx_blob;
-    if(!string_tools::parse_hexstr_to_binbuff(req.tx_as_hex, tx_blob))
+    if(!epee::string_tools::parse_hexstr_to_binbuff(req.tx_as_hex, tx_blob))
     {
       LOG_PRINT_L0("[on_send_raw_tx]: Failed to parse tx from hexbuff: " << req.tx_as_hex);
       res.status = "Failed";
@@ -1320,7 +1317,7 @@ namespace cryptonote
       error_resp.code = CORE_RPC_ERROR_CODE_TOO_BIG_HEIGHT;
       error_resp.message = std::string("Requested block height: ") + std::to_string(h) + " greater than current top block height: " +  std::to_string(m_core.get_current_blockchain_height() - 1);
     }
-    res = string_tools::pod_to_hex(m_core.get_block_id_by_height(h));
+    res = epee::string_tools::pod_to_hex(m_core.get_block_id_by_height(h));
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -1405,10 +1402,10 @@ namespace cryptonote
       crypto::hash seed_hash;
       crypto::rx_seedheights(res.height, &seed_height, &next_height);
       seed_hash = m_core.get_block_id_by_height(seed_height);
-      res.seed_hash = string_tools::pod_to_hex(seed_hash);
+      res.seed_hash = epee::string_tools::pod_to_hex(seed_hash);
       if (next_height != seed_height) {
         seed_hash = m_core.get_block_id_by_height(next_height);
-        res.next_seed_hash = string_tools::pod_to_hex(seed_hash);
+        res.next_seed_hash = epee::string_tools::pod_to_hex(seed_hash);
       }
     }
     res.difficulty = diff;
@@ -1442,9 +1439,9 @@ namespace cryptonote
       return false;
     }
     blobdata hashing_blob = get_block_hashing_blob(b);
-    res.prev_hash = string_tools::pod_to_hex(b.prev_id);
-    res.blocktemplate_blob = string_tools::buff_to_hex_nodelimer(block_blob);
-    res.blockhashing_blob =  string_tools::buff_to_hex_nodelimer(hashing_blob);
+    res.prev_hash = epee::string_tools::pod_to_hex(b.prev_id);
+    res.blocktemplate_blob = epee::string_tools::buff_to_hex_nodelimer(block_blob);
+    res.blockhashing_blob =  epee::string_tools::buff_to_hex_nodelimer(hashing_blob);
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
@@ -1468,7 +1465,7 @@ namespace cryptonote
       return false;
     }
     blobdata blockblob;
-    if(!string_tools::parse_hexstr_to_binbuff(req[0], blockblob))
+    if(!epee::string_tools::parse_hexstr_to_binbuff(req[0], blockblob))
     {
       error_resp.code = CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB;
       error_resp.message = "Wrong block blob";
@@ -1540,7 +1537,7 @@ namespace cryptonote
       if (!r) return false;
 
       blobdata blockblob;
-      if(!string_tools::parse_hexstr_to_binbuff(template_res.blocktemplate_blob, blockblob))
+      if(!epee::string_tools::parse_hexstr_to_binbuff(template_res.blocktemplate_blob, blockblob))
       {
         error_resp.code = CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB;
         error_resp.message = "Wrong block blob";
@@ -1556,7 +1553,7 @@ namespace cryptonote
       b.nonce = req.starting_nonce;
       miner::find_nonce_for_given_block(&(m_core.get_blockchain_storage()), b, template_res.difficulty, template_res.height);
 
-      submit_req.front() = string_tools::buff_to_hex_nodelimer(block_to_blob(b));
+      submit_req.front() = epee::string_tools::buff_to_hex_nodelimer(block_to_blob(b));
       r = on_submitblock(submit_req, submit_res, error_resp, ctx);
       res.status = submit_res.status;
 
@@ -1586,12 +1583,12 @@ namespace cryptonote
     response.major_version = blk.major_version;
     response.minor_version = blk.minor_version;
     response.timestamp = blk.timestamp;
-    response.prev_hash = string_tools::pod_to_hex(blk.prev_id);
+    response.prev_hash = epee::string_tools::pod_to_hex(blk.prev_id);
     response.nonce = blk.nonce;
     response.orphan_status = orphan_status;
     response.height = height;
     response.depth = m_core.get_current_blockchain_height() - height - 1;
-    response.hash = string_tools::pod_to_hex(hash);
+    response.hash = epee::string_tools::pod_to_hex(hash);
     response.difficulty = m_core.get_blockchain_storage().block_difficulty(height);
     response.cumulative_difficulty = m_core.get_blockchain_storage().get_db().get_block_cumulative_difficulty(height);
     response.block_weight = m_core.get_blockchain_storage().get_db().get_block_weight(height);
@@ -1599,10 +1596,10 @@ namespace cryptonote
     response.miner_reward = blk.miner_tx.vout[0].amount;
     response.block_size = response.block_weight = m_core.get_blockchain_storage().get_db().get_block_weight(height);
     response.num_txes = blk.tx_hashes.size();
-    response.pow_hash = fill_pow_hash ? string_tools::pod_to_hex(get_block_longhash(&(m_core.get_blockchain_storage()), blk, height, 0)) : "";
+    response.pow_hash = fill_pow_hash ? epee::string_tools::pod_to_hex(get_block_longhash(&(m_core.get_blockchain_storage()), blk, height, 0)) : "";
     response.long_term_weight = m_core.get_blockchain_storage().get_db().get_block_long_term_weight(height);
-    response.miner_tx_hash = string_tools::pod_to_hex(cryptonote::get_transaction_hash(blk.miner_tx));
-    response.frame_pix_winner = string_tools::pod_to_hex(cryptonote::get_frame_pix_winner_from_tx_extra(blk.miner_tx.extra));
+    response.miner_tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(blk.miner_tx));
+    response.frame_pix_winner = epee::string_tools::pod_to_hex(cryptonote::get_frame_pix_winner_from_tx_extra(blk.miner_tx.extra));
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
@@ -1658,7 +1655,7 @@ namespace cryptonote
       json_req.id = epee::serialization::storage_entry(0);
       json_req.method = command_name;
       json_req.params = req;
-      r = net_utils::invoke_http_json("/json_rpc", json_req, json_resp, m_http_client);
+      r = epee::net_utils::invoke_http_json("/json_rpc", json_req, json_resp, m_http_client);
       if (r)
         res = json_resp.result;
     }
@@ -1728,13 +1725,13 @@ namespace cryptonote
       error_resp.message = "Internal error: can't get block by hash. Hash = " + req.hash + '.';
       return false;
     }
-    if (blk.miner_tx.vin.size() != 1 || blk.miner_tx.vin.front().type() != typeid(txin_gen))
+    if (blk.miner_tx.vin.size() != 1 || !std::holds_alternative<txin_gen>(blk.miner_tx.vin.front()))
     {
       error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
       error_resp.message = "Internal error: coinbase transaction in the block has the wrong type";
       return false;
     }
-    uint64_t block_height = boost::get<txin_gen>(blk.miner_tx.vin.front()).height;
+    uint64_t block_height = std::get<txin_gen>(blk.miner_tx.vin.front()).height;
     const bool restricted = m_restricted && ctx;
     bool response_filled = fill_block_header_response(blk, orphan, block_height, block_hash, res.block_header, req.fill_pow_hash && !restricted);
     if (!response_filled)
@@ -1772,13 +1769,13 @@ namespace cryptonote
         error_resp.message = "Internal error: can't get block by height. Height = " + boost::lexical_cast<std::string>(h) + ". Hash = " + epee::string_tools::pod_to_hex(block_hash) + '.';
         return false;
       }
-      if (blk.miner_tx.vin.size() != 1 || blk.miner_tx.vin.front().type() != typeid(txin_gen))
+      if (blk.miner_tx.vin.size() != 1 || !std::holds_alternative<txin_gen>(blk.miner_tx.vin.front()))
       {
         error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
         error_resp.message = "Internal error: coinbase transaction in the block has the wrong type";
         return false;
       }
-      uint64_t block_height = boost::get<txin_gen>(blk.miner_tx.vin.front()).height;
+      uint64_t block_height = std::get<txin_gen>(blk.miner_tx.vin.front()).height;
       if (block_height != h)
       {
         error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
@@ -1870,13 +1867,14 @@ namespace cryptonote
       error_resp.message = "Internal error: can't get block by hash. Hash = " + req.hash + '.';
       return false;
     }
-    if (blk.miner_tx.vin.size() != 1 || blk.miner_tx.vin.front().type() != typeid(txin_gen))
+
+    if (blk.miner_tx.vin.size() != 1 || !std::holds_alternative<txin_gen>(blk.miner_tx.vin.front()))
     {
       error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
       error_resp.message = "Internal error: coinbase transaction in the block has the wrong type";
       return false;
     }
-    uint64_t block_height = boost::get<txin_gen>(blk.miner_tx.vin.front()).height;
+    uint64_t block_height = std::get<txin_gen>(blk.miner_tx.vin.front()).height;
     const bool restricted = m_restricted && ctx;
     bool response_filled = fill_block_header_response(blk, orphan, block_height, block_hash, res.block_header, req.fill_pow_hash && !restricted);
     if (!response_filled)
@@ -1889,7 +1887,7 @@ namespace cryptonote
     {
       res.tx_hashes.push_back(epee::string_tools::pod_to_hex(blk.tx_hashes[n]));
     }
-    res.blob = string_tools::buff_to_hex_nodelimer(t_serializable_object_to_blob(blk));
+    res.blob = epee::string_tools::buff_to_hex_nodelimer(t_serializable_object_to_blob(blk));
     res.json = obj_to_json_str(blk);
     res.status = CORE_RPC_STATUS_OK;
     return true;
@@ -2868,9 +2866,9 @@ namespace cryptonote
 
     if (auto keys = m_core.get_frame_pix_keys())
     {
-      res.frame_pix_pubkey = string_tools::pod_to_hex(keys->pub);
-      res.frame_pix_ed25519_pubkey = string_tools::pod_to_hex(keys->pub_ed25519);
-      res.frame_pix_x25519_pubkey = string_tools::pod_to_hex(keys->pub_x25519);
+      res.frame_pix_pubkey = epee::string_tools::pod_to_hex(keys->pub);
+      res.frame_pix_ed25519_pubkey = epee::string_tools::pod_to_hex(keys->pub_ed25519);
+      res.frame_pix_x25519_pubkey = epee::string_tools::pod_to_hex(keys->pub_x25519);
       res.status = CORE_RPC_STATUS_OK;
       return true;
     }
@@ -2886,9 +2884,9 @@ namespace cryptonote
 
     if (auto keys = m_core.get_frame_pix_keys())
     {
-      res.frame_pix_privkey = string_tools::pod_to_hex(keys->key.data);
-      res.frame_pix_ed25519_privkey = string_tools::pod_to_hex(keys->key_ed25519.data);
-      res.frame_pix_x25519_privkey = string_tools::pod_to_hex(keys->key_x25519.data);
+      res.frame_pix_privkey = epee::string_tools::pod_to_hex(keys->key.data);
+      res.frame_pix_ed25519_privkey = epee::string_tools::pod_to_hex(keys->key_ed25519.data);
+      res.frame_pix_x25519_privkey = epee::string_tools::pod_to_hex(keys->key_x25519.data);
       res.status = CORE_RPC_STATUS_OK;
       return true;
     }
@@ -2902,7 +2900,7 @@ namespace cryptonote
   void core_rpc_server::fill_sn_response_entry(response &entry, const frame_pixs::frame_pix_pubkey_info &sn_info, uint64_t current_height) {
 
     const auto &info = *sn_info.info;
-    entry.frame_pix_pubkey           = string_tools::pod_to_hex(sn_info.pubkey);
+    entry.frame_pix_pubkey           = epee::string_tools::pod_to_hex(sn_info.pubkey);
     entry.registration_height           = info.registration_height;
     entry.requested_unlock_height       = info.requested_unlock_height;
     entry.last_reward_block_height      = info.last_reward_block_height;
@@ -2916,12 +2914,12 @@ namespace cryptonote
 
     m_core.get_frame_pix_list().access_proof(sn_info.pubkey, [&entry](const auto &proof) {
         entry.frame_pix_version     = proof.version;
-        entry.public_ip                = string_tools::get_ip_string_from_int32(proof.public_ip);
+        entry.public_ip                = epee::string_tools::get_ip_string_from_int32(proof.public_ip);
         entry.storage_port             = proof.storage_port;
         entry.storage_lmq_port         = proof.storage_lmq_port;
         entry.storage_server_reachable = proof.storage_server_reachable;
-        entry.pubkey_ed25519           = proof.pubkey_ed25519 ? string_tools::pod_to_hex(proof.pubkey_ed25519) : "";
-        entry.pubkey_x25519            = proof.pubkey_x25519 ? string_tools::pod_to_hex(proof.pubkey_x25519) : "";
+        entry.pubkey_ed25519           = proof.pubkey_ed25519 ? epee::string_tools::pod_to_hex(proof.pubkey_ed25519) : "";
+        entry.pubkey_x25519            = proof.pubkey_x25519 ? epee::string_tools::pod_to_hex(proof.pubkey_x25519) : "";
         entry.quorumnet_port           = proof.quorumnet_port;
 
         // NOTE: Frame Testing
@@ -2951,8 +2949,8 @@ namespace cryptonote
         new_contributor.locked_contributions.push_back({});
         auto &dest = new_contributor.locked_contributions.back();
         dest.amount                                                = src.amount;
-        dest.key_image                                             = string_tools::pod_to_hex(src.key_image);
-        dest.key_image_pub_key                                     = string_tools::pod_to_hex(src.key_image_pub_key);
+        dest.key_image                                             = epee::string_tools::pod_to_hex(src.key_image);
+        dest.key_image_pub_key                                     = epee::string_tools::pod_to_hex(src.key_image_pub_key);
       }
     }
 
@@ -2973,7 +2971,7 @@ namespace cryptonote
     std::vector<crypto::public_key> pubkeys(req.frame_pix_pubkeys.size());
     for (size_t i = 0; i < req.frame_pix_pubkeys.size(); i++)
     {
-      if (!string_tools::hex_to_pod(req.frame_pix_pubkeys[i], pubkeys[i]))
+      if (!epee::string_tools::hex_to_pod(req.frame_pix_pubkeys[i], pubkeys[i]))
       {
         error_resp.code    = CORE_RPC_ERROR_CODE_WRONG_PARAM;
         error_resp.message = "Could not convert to a public key, arg: ";
@@ -3000,7 +2998,7 @@ namespace cryptonote
     const uint64_t height = m_core.get_current_blockchain_height();
 
     res.height = height - 1;
-    res.block_hash = string_tools::pod_to_hex(m_core.get_block_id_by_height(res.height));
+    res.block_hash = epee::string_tools::pod_to_hex(m_core.get_block_id_by_height(res.height));
     
     for (auto &pubkey_info : pubkey_info_list)
     {
@@ -3021,7 +3019,7 @@ namespace cryptonote
     const uint64_t height = m_core.get_current_blockchain_height();
     res.height = height - 1;
     res.target_height = m_core.get_target_blockchain_height();
-    res.block_hash = string_tools::pod_to_hex(m_core.get_block_id_by_height(res.height));
+    res.block_hash = epee::string_tools::pod_to_hex(m_core.get_block_id_by_height(res.height));
     res.hardfork = m_core.get_hard_fork_version(res.height);
 
     if (!req.poll_block_hash.empty()) {
@@ -3399,7 +3397,7 @@ namespace cryptonote
                                                              const connection_context* ctx)
   {
     crypto::public_key pubkey;
-    if (!string_tools::hex_to_pod(req.pubkey, pubkey)) {
+    if (!epee::string_tools::hex_to_pod(req.pubkey, pubkey)) {
       MERROR("Could not parse public key: " << req.pubkey);
       error_resp.code = CORE_RPC_ERROR_CODE_WRONG_PARAM;
       error_resp.message = "Could not parse public key";

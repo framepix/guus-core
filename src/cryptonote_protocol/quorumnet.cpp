@@ -42,6 +42,10 @@
 #include <shared_mutex>
 #include <iterator>
 
+#include <string_view>
+
+using namespace std::literals;
+
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "qnet"
 
@@ -50,9 +54,7 @@ namespace quorumnet {
 namespace {
 
 using namespace frame_pixs;
-using namespace std::literals;
 using namespace lokimq;
-using namespace lokimq::literals;
 
 using blink_tx = cryptonote::blink_tx;
 
@@ -107,7 +109,7 @@ std::string get_data_as_string(const T &key) {
     return {reinterpret_cast<const char *>(&key), sizeof(key)};
 }
 
-crypto::x25519_public_key x25519_from_string(string_view pubkey) {
+crypto::x25519_public_key x25519_from_string(std::string_view pubkey) {
     crypto::x25519_public_key x25519_pub = crypto::x25519_public_key::null();
     if (pubkey.size() == sizeof(crypto::x25519_public_key))
         std::memcpy(x25519_pub.data, pubkey.data(), pubkey.size());
@@ -171,7 +173,7 @@ void refresh_sns(void* obj) {
 
 void *new_snnwrapper(cryptonote::core &core, const std::string &bind) {
     auto keys = core.get_frame_pix_keys();
-    auto peer_lookup = [&sn_list = core.get_frame_pix_list()](string_view x25519_pub) {
+    auto peer_lookup = [&sn_list = core.get_frame_pix_list()](std::string_view x25519_pub) {
         return get_connect_string(sn_list, x25519_from_string(x25519_pub));
     };
     SNNWrapper *obj;
@@ -455,7 +457,7 @@ bt_dict serialize_vote(const quorum_vote_t &vote) {
     return result;
 }
 
-quorum_vote_t deserialize_vote(string_view v) {
+quorum_vote_t deserialize_vote(std::string_view v) {
     const auto &d = bt_deserialize<bt_dict>(v); // throws if not a bt_dict
     quorum_vote_t vote;
     vote.version = get_int<uint8_t>(d.at("v"));
@@ -841,8 +843,8 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
     auto hf_version = snw.core.get_blockchain_storage().get_current_hard_fork_version();
     if (hf_version < HF_VERSION_BLINK) {
         MWARNING("Rejecting blink message: blink is not available for hardfork " << (int) hf_version);
-        if (tag)
-            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid blink authorization height"_sv}}));
+     if (tag)
+    m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"Invalid blink authorization height"})}}));
         return;
     }
 
@@ -852,15 +854,15 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
 
     if (blink_height < local_height - 2) {
         MINFO("Rejecting blink tx because blink auth height is too low (" << blink_height << " vs. " << local_height << ")");
-        if (tag)
-            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid blink authorization height"_sv}}));
+       if (tag)
+       m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"Invalid blink authorization height"})}}));
         return;
     } else if (blink_height > local_height + 2) {
         // TODO: if within some threshold (maybe 5-10?) we could hold it and process it once we are
         // within 2.
         MINFO("Rejecting blink tx because blink auth height is too high (" << blink_height << " vs. " << local_height << ")");
         if (tag)
-            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid blink authorization height"_sv}}));
+        m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"Invalid blink authorization height"})}}));
         return;
     }
     MTRACE("Blink tx auth height " << blink_height << " is valid (local height is " << local_height << ")");
@@ -868,8 +870,8 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
     auto t_it = data.find("t");
     if (t_it == data.end()) {
         MINFO("Rejecting blink tx: no tx data included in request");
-        if (tag)
-            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "No transaction included in blink request"_sv}}));
+       if (tag)
+       m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"No transaction included in blink request"})}}));
         return;
     }
     const std::string &tx_data = t_it->second.get<std::string>();
@@ -918,7 +920,7 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
     } else {
         MINFO("Rejecting blink tx: invalid tx hash included in request");
         if (tag)
-            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid transaction hash"s}}));
+        m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"Invalid transaction hash"})}}));
         return;
     }
 
@@ -947,13 +949,13 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
     else {
         MINFO("Rejecting blink tx: this service node is not a member of the blink quorum!");
         if (tag)
-            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Blink tx relayed to non-blink quorum member"_sv}}));
+            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"Blink tx relayed to non-blink quorum member"})}}));
         return;
     }
 
     auto btxptr = std::make_shared<blink_tx>(blink_height);
     auto &btx = *btxptr;
-    auto &tx = boost::get<cryptonote::transaction>(btx.tx);
+    auto &tx = std::get<cryptonote::transaction>(btx.tx);
     // If any quorums are too small set the extra spaces to rejected (this also checks that no
     // quorums are too big).
     for (size_t qi = 0; qi < blink_quorums.size(); qi++)
@@ -964,7 +966,7 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
         if (!cryptonote::parse_and_validate_tx_from_blob(tx_data, tx, tx_hash_actual)) {
             MINFO("Rejecting blink tx: failed to parse transaction data");
             if (tag)
-                m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Failed to parse transaction data"_sv}}));
+                m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"Failed to parse transaction data"})}}));
             return;
         }
         MTRACE("Successfully parsed transaction data");
@@ -972,7 +974,7 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
         if (tx_hash != tx_hash_actual) {
             MINFO("Rejecting blink tx: submitted tx hash " << tx_hash << " did not match actual tx hash " << tx_hash_actual);
             if (tag)
-                m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "Invalid transaction hash"_sv}}));
+                m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"Invalid transaction hash"})}}));
             return;
         } else {
             MTRACE("Pre-computed tx hash matches actual tx hash");
@@ -984,7 +986,7 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
     if (!pinfo.strong_peers) {
         MWARNING("Could not find connection info for any blink quorum peers.  Aborting blink tx");
         if (tag)
-            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", "No quorum peers are currently reachable"_sv}}));
+            m.send_back("bl_nostart", bt_serialize(bt_dict{{"!", tag}, {"e", bt_value(std::string{"No quorum peers are currently reachable"})}}));
         return;
     }
 
@@ -1063,7 +1065,7 @@ void handle_blink(lokimq::Message& m, SNNWrapper& snw) {
 }
 
 template <typename Consume>
-void extract_signature_values(bt_dict_consumer& data, string_view key, std::list<pending_signature>& signatures, Consume consume) {
+void extract_signature_values(bt_dict_consumer& data, std::string_view key, std::list<pending_signature>& signatures, Consume consume) {
     if (!data.skip_until(key)) throw std::invalid_argument("Invalid blink signature data: missing required field '" + std::string{key} + "'");
     auto list = data.consume_list_consumer();
     auto it = signatures.begin();

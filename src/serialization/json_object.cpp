@@ -567,7 +567,7 @@ void toJsonValue(rapidjson::Document& doc, const cryptonote::connection_info& in
   insert_into_json_object(val, doc, "incoming", info.incoming);
   insert_into_json_object(val, doc, "localhost", info.localhost);
   insert_into_json_object(val, doc, "local_ip", info.local_ip);
-  insert_into_json_object(val, doc, "address_type", info.address_type);
+  //insert_into_json_object(val, doc, "address_type", info.address_type);
 
   insert_into_json_object(val, doc, "ip", info.ip);
   insert_into_json_object(val, doc, "port", info.port);
@@ -603,7 +603,7 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::connection_info& inf
   load_from_json_object(val, "incoming", info.incoming);
   load_from_json_object(val, "localhost", info.localhost);
   load_from_json_object(val, "local_ip", info.local_ip);
-  load_from_json_object(val, "address_type", info.address_type);
+  //load_from_json_object(val, "address_type", info.address_type);
 
   load_from_json_object(val, "ip", info.ip);
   load_from_json_object(val, "port", info.port);

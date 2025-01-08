@@ -51,7 +51,6 @@
 #define GUUS_DEFAULT_LOG_CATEGORY "bcutil"
 
 namespace po = boost::program_options;
-using namespace epee;
 using namespace cryptonote;
 
 static const char zerokey[8] = {0};
@@ -308,6 +307,7 @@ static std::string compress_ring(const std::vector<uint64_t> &ring, std::string 
   auto ins = std::back_inserter(s);
   for (uint64_t out: ring)
     tools::write_varint(ins, out);
+  return s;
 }
 
 static std::string compress_ring(uint64_t amount, const std::vector<uint64_t> &ring)
@@ -482,7 +482,7 @@ static bool for_all_transactions(const std::string &filename, const uint64_t &st
 
     ret = mdb_cursor_get(cur_txs, &k, &v, op_txs);
     if (ret)
-      throw std::runtime_error("Failed to fetch transaction " + string_tools::pod_to_hex(get_transaction_hash(b.miner_tx)) + ": " + std::string(mdb_strerror(ret)));
+      throw std::runtime_error("Failed to fetch transaction " + epee::string_tools::pod_to_hex(get_transaction_hash(b.miner_tx)) + ": " + std::string(mdb_strerror(ret)));
     op_txs = MDB_NEXT;
 
     bool last_block = height == n_blocks - 1;
@@ -496,7 +496,7 @@ static bool for_all_transactions(const std::string &filename, const uint64_t &st
       const crypto::hash& txid = b.tx_hashes[i];
       ret = mdb_cursor_get(cur_txs, &k, &v, op_txs);
       if (ret)
-        throw std::runtime_error("Failed to fetch transaction " + string_tools::pod_to_hex(txid) + ": " + std::string(mdb_strerror(ret)));
+        throw std::runtime_error("Failed to fetch transaction " + epee::string_tools::pod_to_hex(txid) + ": " + std::string(mdb_strerror(ret)));
       if (start_idx <= tx_idx++)
       {
         cryptonote::transaction_prefix tx;
@@ -1352,7 +1352,7 @@ int main(int argc, char* argv[])
       for (const auto &out: tx.vout)
       {
         ++outs_total;
-        CHECK_AND_ASSERT_THROW_MES(out.target.type() == typeid(txout_to_key), "Out target type is not txout_to_key: height=" + std::to_string(height));
+        CHECK_AND_ASSERT_THROW_MES(std::holds_alternative<txout_to_key>(out.target), "Out target type is not txout_to_key: height=" + std::to_string(height));
         uint64_t out_global_index = outs_per_amount[out.amount]++;
         if (is_output_spent(cur, output_data(out.amount, out_global_index)))
           ++outs_spent;
@@ -1428,12 +1428,12 @@ int main(int argc, char* argv[])
     for_all_transactions(filename, start_idx, n_txes, [&](const cryptonote::transaction_prefix &tx)->bool
     {
       std::cout << "\r" << start_idx << "/" << n_txes << "         \r" << std::flush;
-      const bool miner_tx = tx.vin.size() == 1 && tx.vin[0].type() == typeid(txin_gen);
+      const bool miner_tx = tx.vin.size() == 1 && std::holds_alternative<txin_gen>(tx.vin[0]);
       for (const auto &in: tx.vin)
       {
-        if (in.type() != typeid(txin_to_key))
+        if (!std::holds_alternative<txin_to_key>(in))
           continue;
-        const auto &txin = boost::get<txin_to_key>(in);
+        const auto &txin = std::get<txin_to_key>(in);
         if (opt_rct_only && txin.amount != 0)
           continue;
 
@@ -1570,7 +1570,7 @@ int main(int argc, char* argv[])
 
           if (opt_rct_only && amount != 0)
             continue;
-          if (out.target.type() != typeid(txout_to_key))
+          if (!std::holds_alternative<txout_to_key>(out.target))
             continue;
           inc_per_amount_outputs(txn, amount, 1, 0);
         }

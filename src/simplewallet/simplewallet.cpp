@@ -2686,6 +2686,35 @@ bool simple_wallet::set_device_name(const std::vector<std::string> &args/* = std
   return true;
 }
 
+bool simple_wallet::set_export_format(const std::vector<std::string> &args/* = std::vector<std::string()*/)
+{
+  if (args.size() < 2)
+  {
+    fail_msg_writer() << tr("Export format not specified");
+    return true;
+  }
+
+  if (boost::algorithm::iequals(args[1], "ascii"))
+  {
+    m_wallet->set_export_format(tools::wallet2::ExportFormat::Ascii);
+  }
+  else if (boost::algorithm::iequals(args[1], "binary"))
+  {
+    m_wallet->set_export_format(tools::wallet2::ExportFormat::Binary);
+  }
+  else
+  {
+    fail_msg_writer() << tr("Export format not recognized.");
+    return true;
+  }
+  const auto pwd_container = get_and_verify_password();
+  if (pwd_container)
+  {
+    m_wallet->rewrite(m_wallet_file, pwd_container->password());
+  }
+  return true;
+}
+
 bool simple_wallet::help(const std::vector<std::string> &args/* = std::vector<std::string>()*/)
 {
   if(args.empty())
@@ -3420,6 +3449,7 @@ bool simple_wallet::set_variable(const std::vector<std::string> &args)
     CHECK_SIMPLE_VARIABLE("track-uses", set_track_uses, tr("0 or 1"));
     CHECK_SIMPLE_VARIABLE("setup-background-mining", set_setup_background_mining, tr("1/yes or 0/no"));
     CHECK_SIMPLE_VARIABLE("device-name", set_device_name, tr("<device_name[:device_spec]>"));
+    CHECK_SIMPLE_VARIABLE("export-format", set_export_format, tr("\"binary\" or \"ascii\""));
   }
   fail_msg_writer() << tr("set: unrecognized argument(s)");
   return true;

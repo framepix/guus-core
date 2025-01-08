@@ -956,25 +956,7 @@ namespace cryptonote
     if (tx_extra.empty())
       return true;
    serialization::binary_string_unarchiver ar{tx_extra};
-    serialization::binary_string_archiver newar;
-    try {
-      do
-      {
-        tx_extra_field field;
-        value(ar, field);
-        if (field.index() != variant_index)
-          value(newar, field);
-      } while (ar.remaining_bytes() > 0);
-    } catch (const std::exception& e) {
-      LOG_PRINT_L1(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << lokimq::to_hex(tx_extra.begin(), tx_extra.end()));
-      return false;
-    }
-    std::string s = newar.str();
-    tx_extra.clear();
-    tx_extra.reserve(s.size());
-    std::copy(s.begin(), s.end(), std::back_inserter(tx_extra));
-    return true;
-  }
+    serialization::binary_string_archiver
   //---------------------------------------------------------------
   void set_payment_id_to_tx_extra_nonce(blobdata& extra_nonce, const crypto::hash& payment_id)
   {

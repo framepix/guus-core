@@ -35,6 +35,7 @@ add_library(cryptonote_core
   frame_pix_voting.cpp
   frame_pix_quorum_cop.cpp
   frame_pix_swarm.cpp
+  guus_vm.cpp
   tx_blink.cpp
   guus_name_system.cpp
   tx_pool.cpp
@@ -56,10 +57,7 @@ target_link_libraries(cryptonote_core
     Boost::program_options
     Boost::chrono
     extra
-    systemd
-    intx
-    ethash
-    evmone)
+    systemd)
 
 if(PER_BLOCK_CHECKPOINT)
   target_compile_definitions(cryptonote_core PUBLIC PER_BLOCK_CHECKPOINT)

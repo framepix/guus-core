@@ -78,7 +78,6 @@ std::string refresh_string = "\r                                    \r";
 namespace po = boost::program_options;
 
 using namespace cryptonote;
-using namespace epee;
 
 // db_mode: safe, fast, fastest
 int get_db_flags_from_mode(const std::string& db_mode)
