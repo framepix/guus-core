@@ -88,6 +88,9 @@ namespace cryptonote
     bool process_command(const std::vector<std::string> &args);
     std::string get_commands_str();
     std::string get_command_usage(const std::vector<std::string> &args);
+    bool save_file(const std::string& filename);
+    bool retrieve_file(const std::string& filename);
+
   private:
 
     enum ResetType { ResetNone, ResetSoft, ResetHard, ResetSoftKeepKI };
@@ -408,6 +411,7 @@ namespace cryptonote
     std::string m_import_path;
     std::string m_subaddress_lookahead;
     std::string m_restore_date;  // optional - converted to m_restore_height
+    std::string m_save_file;
 
     epee::wipeable_string m_electrum_seed;  // electrum-style seed parameter
 

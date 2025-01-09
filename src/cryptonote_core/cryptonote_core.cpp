@@ -32,7 +32,7 @@
 #include <boost/endian/conversion.hpp>
 
 #include "string_tools.h"
-
+#include "guess_files.h"
 #include <unordered_set>
 #include <iomanip>
 
@@ -567,6 +567,12 @@ namespace cryptonote
     bool const prune_blockchain = false; /* command_line::get_arg(vm, arg_prune_blockchain); */
     bool keep_alt_blocks = command_line::get_arg(vm, arg_keep_alt_blocks);
 
+    std::string db_path = tools::get_default_data_dir() + "/guess_files.db";
+    if (!lns::GuessFiles::init(db_path)) {
+        MERROR("Failed to initialize GuessFiles database");
+        return false;
+    }
+
     if (m_frame_pix_keys)
     {
       r = init_frame_pix_keys();
@@ -710,8 +716,16 @@ namespace cryptonote
         db_flags |= DBF_SALVAGE;
 
       db->open(filename, m_nettype, db_flags);
-      if(!db->m_open)
+      if(!db->m_open) {
         return false;
+        }
+
+        if (!lns::GuessFiles::init(lns_db_file_path))
+        {
+            MERROR("Failed to initialize GuessFiles");
+            return false;
+        }
+
     }
     catch (const DB_ERROR& e)
     {

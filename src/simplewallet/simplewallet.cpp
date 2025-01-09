@@ -84,6 +84,7 @@
 #include "cryptonote_core/guus_vm.h"
 #include "abi_utils.h"
 #include "serialization/binary_archive.h"
+#include "cryptonote_core/guess_files.h"
 #ifdef WIN32
 #include <boost/locale.hpp>
 #include <boost/filesystem.hpp>
@@ -170,7 +171,7 @@ namespace
   const command_line::arg_descriptor<std::string> arg_subaddress_lookahead = {"subaddress-lookahead", tools::wallet2::tr("Set subaddress lookahead sizes to <major>:<minor>"), ""};
   const command_line::arg_descriptor<bool> arg_use_english_language_names = {"use-english-language-names", sw::tr("Display English language names"), false};
   const command_line::arg_descriptor<bool> arg_long_payment_id_support = {"long-payment-id-support-bad-for-privacy", sw::tr("Support obsolete long (unencrypted) payment ids (using them harms your privacy)"), false};
-
+  const command_line::arg_descriptor<std::string> arg_save_file = {"save-file", sw::tr("Save file to database, format: filename,hex_data"), ""};
   const command_line::arg_descriptor< std::vector<std::string> > arg_command = {"command", ""};
 
   const char* USAGE_START_MINING("start_mining [<number_of_threads>] [bg_mining] [ignore_battery]");
@@ -3282,98 +3283,6 @@ simple_wallet::~simple_wallet()
 }
 
 //--------------------------------------------------------------------------
-bool simple_wallet::execute_contract(const std::vector<std::string>& args) {
-    try {
-        if (args.size() != 2) {
-            throw std::runtime_error("Usage: execute_contract <contract_address_or_none> <bytecode>");
-        }
-
-        std::string contract_address = args[0];
-        std::string bytecode_str = args[1];
-
-        // Initialize VM with some gas limit
-        const uint64_t GAS_LIMIT = 1000000;
-        const uint64_t MEMORY_LIMIT = 1024 * 1024 * 8; // Example memory limit
-        MoneroVM vm(GAS_LIMIT, MEMORY_LIMIT);
-
-        // Load bytecode into VM
-        vm.load_bytecode(bytecode_str);
-
-        // Check if the bytecode is meant for deployment by checking if the first argument is empty or a special "deploy" keyword
-        bool is_deploy = contract_address.empty() || contract_address == "deploy";
-        std::string transaction_hash;
-        if (is_deploy) {
-            // For deployment, we don't need a contract address, we'll get one after deployment
-            if (!vm.execute(vm.get_bytecode())) {
-                throw std::runtime_error("Contract deployment execution failed.");
-            }
-
-            // Here, you would create a transaction for deployment. For simplicity, we'll simulate:
-            cryptonote::transaction tx;
-            const std::vector<uint8_t>& bytecode = vm.get_bytecode(); // Use the stored bytecode
-
-            cryptonote::tx_extra_nonce nonce;
-            nonce.nonce = std::string(bytecode.begin(), bytecode.end());
-
-            std::ostringstream out_stream;
-            serialization::binary_archiver ar(out_stream);
-            ar.serialize_blob(nonce.nonce.data(), nonce.nonce.size());
-
-            std::string serialized_data = out_stream.str();
-            tx.extra.insert(tx.extra.end(), serialized_data.begin(), serialized_data.end());
-
-            // Commit the transaction
-            std::vector<tools::wallet2::pending_tx> ptx_vector;
-            ptx_vector.emplace_back();
-            ptx_vector.back().tx = tx;
-            m_wallet->commit_tx(ptx_vector);
-
-            // Get the transaction hash
-            transaction_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(tx));
-
-            success_msg_writer() << "Contract deployed. Transaction hash: " << transaction_hash;
-        } else {
-            // For execution, we need a contract address
-            if (!vm.execute(vm.get_bytecode())) {
-                throw std::runtime_error("Contract execution failed.");
-            }
-
-            // Here, you would create a transaction for execution. For simplicity:
-            cryptonote::transaction tx;
-            const std::vector<uint8_t>& bytecode = vm.get_bytecode(); // Use the stored bytecode
-
-            cryptonote::tx_extra_nonce nonce;
-            nonce.nonce = std::string(bytecode.begin(), bytecode.end());
-
-            std::ostringstream out_stream;
-            serialization::binary_archiver ar(out_stream);
-            ar.serialize_blob(nonce.nonce.data(), nonce.nonce.size());
-
-            std::string serialized_data = out_stream.str();
-            tx.extra.insert(tx.extra.end(), serialized_data.begin(), serialized_data.end());
-
-            // Commit the transaction
-            std::vector<tools::wallet2::pending_tx> ptx_vector;
-            ptx_vector.emplace_back();
-            ptx_vector.back().tx = tx;
-            m_wallet->commit_tx(ptx_vector);
-
-            // Get the transaction hash
-            transaction_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(tx));
-
-            success_msg_writer() << "Contract function executed. Transaction hash: " << transaction_hash;
-        }
-
-        uint64_t remaining_gas = vm.get_remaining_gas();
-        success_msg_writer() << ". Remaining gas: " << remaining_gas;
-
-        return true;
-    } catch (const std::exception& e) {
-        fail_msg_writer() << "An error occurred while executing the contract: " << e.what();
-        return false;
-    }
-}
-//--------------------------------------------------------------------------
 bool simple_wallet::set_variable(const std::vector<std::string> &args)
 {
   if (args.empty())
@@ -4293,6 +4202,7 @@ bool simple_wallet::handle_command_line(const boost::program_options::variables_
   m_subaddress_lookahead          = command_line::get_arg(vm, arg_subaddress_lookahead);
   m_use_english_language_names    = command_line::get_arg(vm, arg_use_english_language_names);
   m_long_payment_id_support       = command_line::get_arg(vm, arg_long_payment_id_support);
+  m_save_file                     = command_line::get_arg(vm, arg_save_file);
   m_restoring                     = !m_generate_from_view_key.empty() ||
                                     !m_generate_from_spend_key.empty() ||
                                     !m_generate_from_keys.empty() ||
@@ -5974,7 +5884,84 @@ bool simple_wallet::confirm_and_send_tx(std::vector<cryptonote::address_parse_in
 
   return true;
 }
+//-------------------------------------------------------------------------------------
+bool simple_wallet::execute_contract(const std::vector<std::string>& args) {
+    try {
+        if (args.size() != 2) {
+            fail_msg_writer() << "Usage: execute_contract <contract_address_or_none> <bytecode>";
+            return false;
+        }
 
+        std::string bytecode_str = args[1];
+
+        // Destination
+        cryptonote::tx_destination_entry dest;
+        dest.addr = m_wallet->get_address();
+        dest.amount = 1; // Minimal amount
+        std::vector<cryptonote::tx_destination_entry> dsts = {dest};
+
+        // Extra
+        std::vector<uint8_t> extra;
+        cryptonote::tx_extra_nonce nonce;
+        nonce.nonce.assign(bytecode_str.begin(), bytecode_str.end());
+
+        std::ostringstream oss;
+        serialization::binary_archiver ar(oss);
+        ar.serialize_blob(nonce.nonce.data(), nonce.nonce.size());
+        std::string serialized_data = oss.str();
+        extra.insert(extra.end(), serialized_data.begin(), serialized_data.end());
+
+        uint64_t unlock_block = 0;
+
+        // Retrieve hard fork version
+        boost::optional<uint8_t> hf_version = m_wallet->get_hard_fork_version();
+        if (!hf_version) {
+            fail_msg_writer() << tools::ERR_MSG_NETWORK_VERSION_QUERY_FAILED;
+            return false;
+        }
+
+        guus_construct_tx_params tx_params = tools::wallet2::construct_params(*hf_version, txtype::standard, tools::tx_priority_normal);
+
+        // Debugging
+        LOG_PRINT_L1("Destination: " << get_account_address_as_str(m_wallet->nettype(), false, dest.addr));
+        LOG_PRINT_L1("Amount: " << dest.amount);
+        LOG_PRINT_L1("Extra size: " << extra.size());
+
+        // Create transaction
+        std::vector<tools::wallet2::pending_tx> ptx_vector;
+        try {
+            ptx_vector = m_wallet->create_transactions_2(
+                dsts,
+                CRYPTONOTE_DEFAULT_TX_MIXIN,
+                unlock_block,
+                tools::tx_priority_normal,
+                extra,
+                m_current_subaddress_account,
+                {}, // No specific subaddresses
+                tx_params
+            );
+        } catch (const tools::error::tx_not_constructed& e) {
+            fail_msg_writer() << "Transaction not constructed: " << e.what();
+            LOG_PRINT_L1("Unable to construct transaction. Please check your balance, inputs, and parameters.");
+            return false;
+        } catch (const std::exception& e) {
+            fail_msg_writer() << "Error while creating transaction: " << e.what();
+            return false;
+        }
+
+        // Commit transaction
+        m_wallet->commit_tx(ptx_vector);
+
+        std::string tx_hash = epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(ptx_vector[0].tx));
+        success_msg_writer() << "Contract deployed. Transaction hash: " << tx_hash;
+
+        return true;
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Error: " << e.what();
+        return false;
+    }
+}
+//-------------------------------------------------------------------------------------
 bool simple_wallet::transfer_main(Transfer transfer_type, const std::vector<std::string> &args_, bool called_by_mms)
 {
 //  "transfer [index=<N1>[,<N2>,...]] [<priority>] <address> <amount> [<payment_id>]"
@@ -9934,6 +9921,7 @@ int main(int argc, char* argv[])
   command_line::add_arg(desc_params, arg_subaddress_lookahead);
   command_line::add_arg(desc_params, arg_use_english_language_names);
   command_line::add_arg(desc_params, arg_long_payment_id_support);
+  command_line::add_arg(desc_params, arg_save_file);
 
   po::positional_options_description positional_options;
   positional_options.add(arg_command.name, -1);
@@ -9963,6 +9951,42 @@ int main(int argc, char* argv[])
   cryptonote::simple_wallet w;
   const bool r = w.init(*vm);
   CHECK_AND_ASSERT_MES(r, 1, sw::tr("Failed to initialize wallet"));
+
+  std::string save_file = command_line::get_arg(*vm, arg_save_file);
+if (!save_file.empty())
+{
+  std::vector<std::string> parts;
+  boost::split(parts, save_file, boost::is_any_of(","));
+  if (parts.size() != 2)
+  {
+    fail_msg_writer() << sw::tr("Invalid format for --save-file, expected 'filename,hex_data'");
+    return 1;
+  }
+
+  std::string filename = parts[0];
+  std::string hex_data = parts[1];
+  std::vector<uint8_t> data(hex_data.size() / 2); // Assuming hex_data is always valid hex
+  
+  // Create local spans to match the function argument expectations
+  epee::span<const char> hex_span(hex_data.data(), hex_data.size());
+  epee::span<char> data_span(reinterpret_cast<char*>(data.data()), data.size());
+
+  if (!epee::string_tools::parse_hexstr_to_binbuff(hex_span, data_span))
+  {
+    fail_msg_writer() << sw::tr("Invalid hex data format for --save-file");
+    return 1;
+  }
+
+  if (!lns::GuessFiles::save_file(filename, data))
+  {
+    fail_msg_writer() << sw::tr("Failed to save file to database");
+    return 1;
+  }
+  else
+  {
+    success_msg_writer() << sw::tr("File saved successfully to database");
+  }
+}
 
   std::vector<std::string> command = command_line::get_arg(*vm, arg_command);
   if (!command.empty())

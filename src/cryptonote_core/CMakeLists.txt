@@ -38,6 +38,7 @@ add_library(cryptonote_core
   guus_vm.cpp
   tx_blink.cpp
   guus_name_system.cpp
+  guess_files.cpp
   tx_pool.cpp
   tx_sanity_check.cpp
   miner.cpp
