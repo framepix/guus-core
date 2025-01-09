@@ -71,7 +71,6 @@ void MoneroVM::consume_gas(uint64_t amount) {
     gas -= amount;
 }
 
-// Execute bytecode 
 bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
     while (pc < bytecode.size()) {
         if (gas == 0) throw std::runtime_error("Out of gas");
@@ -89,15 +88,16 @@ bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
             case Opcode::MUL:
                 consume_gas(LOW_FEE);
                 {
-                 uint256_t b = pop(), a = pop();
-                 push(multiply_uint256(a, b));
+                    uint256_t b = pop(), a = pop();
+                    push(multiply_uint256(a, b));
                 }
                 break;
+
             case Opcode::SUB:
                 consume_gas(VERY_LOW_FEE);
                 {
-                 uint256_t b = pop(), a = pop();
-                 push(subtract_uint256(a, b));
+                    uint256_t b = pop(), a = pop();
+                    push(subtract_uint256(a, b));
                 }
                 break;
 
@@ -108,7 +108,7 @@ bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
                     if (b == uint256_from_uint64(0)) {
                         push(uint256_from_uint64(0)); // Ethereum's EVM returns 0 for division by zero
                     } else {
-                     push(divide_uint256(a, b));
+                        push(divide_uint256(a, b));
                     }
                 }
                 break;
@@ -209,7 +209,10 @@ bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
                 throw std::runtime_error("Revert");
 
             default:
-                throw std::runtime_error("Unknown opcode");
+                std::cerr << "Warning: Unknown opcode encountered: " << std::hex << static_cast<int>(op) << std::endl;
+                // You might choose to continue execution or throw an error here
+                // For now, we'll continue execution to mimic the behavior of the Python script
+                continue;
         }
     }
     return true;
@@ -217,14 +220,16 @@ bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
 
 bool MoneroVM::validate_bytecode(const std::vector<uint8_t>& bytecode) {
     int stack_size = 0;
+    std::map<size_t, bool> jumpdests;  // To track valid jump destinations
+    
     for (size_t pc = 0; pc < bytecode.size(); ++pc) {
         Opcode op = static_cast<Opcode>(bytecode[pc]);
+        
         switch (op) {
-            case Opcode::MLOAD:
-            case Opcode::MSTORE:
-                if (stack_size < 1) return false; // Needs at least one item for address
-                stack_size -= 1; // MSTORE pops two, MLOAD pops one
+            case Opcode::STOP:
+                // No stack change
                 break;
+
             case Opcode::ADD:
             case Opcode::SUB:
             case Opcode::MUL:
@@ -235,21 +240,55 @@ bool MoneroVM::validate_bytecode(const std::vector<uint8_t>& bytecode) {
             case Opcode::AND:
             case Opcode::OR:
             case Opcode::XOR:
-                if (stack_size < 2) return false; // Needs two items for binary operations
-                stack_size -= 1; // Pops two, pushes one back
+                // These ops pop 2 values and push 1 back
+                if (stack_size < 2) return false; // Not enough items for operation
+                stack_size -= 1;
                 break;
+
+            case Opcode::MLOAD:
+                // Pops 1 for address, pushes 1 value back
+                if (stack_size < 1) return false; // No address on stack
+                break;
+
+            case Opcode::MSTORE:
+                // Pops 2 values (value, then address)
+                if (stack_size < 2) return false; // Not enough items for MSTORE
+                stack_size -= 2;
+                break;
+
+            case Opcode::JUMP:
+                // Pops 1 item for destination
+                if (stack_size < 1 || !jumpdests[uint64_from_uint256(peek(0))]) return false; // Check if jump dest is valid
+                stack_size -= 1;
+                break;
+
             case Opcode::JUMPI:
-                if (stack_size < 2) return false; // Needs condition and destination
-                stack_size -= 2; // Pops both
+                // Pops 2 items (condition, then destination)
+                if (stack_size < 2 || !jumpdests[uint64_from_uint256(peek(1))]) return false; // Check if jump dest is valid
+                stack_size -= 2;
                 break;
-            // Add more cases as needed...
+
+            case Opcode::REVERT:
+                // Revert ends execution, so it's valid but we should return here
+                return true;
+
             default:
-                // Handle other opcodes or unknown opcodes
+                // Handle JUMPDEST or unknown opcodes
+                if (static_cast<int>(op) == 0x5B) { // JUMPDEST
+                    jumpdests[pc] = true;
+                } else {
+                    // If it's not an explicitly listed opcode, we consider it invalid
+                    return false;
+                }
                 break;
         }
+
         if (stack_size < 0) return false; // Stack underflow detected
+        if (stack_size > 1024) return false; // Stack overflow, assuming 1024 as the max size
     }
-    return stack_size == 0; // Stack should be empty at the end of execution
+
+    // Check if stack is empty at the end of bytecode execution
+    return stack_size == 0;
 }
 
 // Get the remaining gas
