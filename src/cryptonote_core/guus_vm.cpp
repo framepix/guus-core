@@ -2,6 +2,13 @@
 #include <stdexcept>
 #include <iostream>
 #include <vector>
+#include <map>
+#include <algorithm>
+#include <iomanip>
+#include "common/opo.h"
+#include "string_tools.h"
+
+// Helper functions for uint256_t operations
 
 // Constructor for MoneroVM with initial gas
 MoneroVM::MoneroVM(uint64_t initial_gas, uint64_t memory_limit)
@@ -29,18 +36,20 @@ uint256_t MoneroVM::peek(size_t index) const {
 
 // Store a value in memory at a specified offset (big-endian format)
 void MoneroVM::mem_store(size_t offset, const uint256_t& value) {
-    // Ensure memory is large enough, expanding with gas cost if necessary
-    while (memory.size() <= offset + 31) {
-        memory.push_back(0);
-        consume_gas(3); // Example cost for memory expansion
+    size_t new_size = std::max(offset + 32, memory.size());
+    size_t mem_words = (new_size + 31) / 32;
+    size_t old_words = memory.size() / 32;
+    uint64_t gas_cost = (mem_words * mem_words) / 512 - (old_words * old_words) / 512; // Quadratic growth
+    consume_gas(gas_cost);
+
+    if (memory.size() < new_size) {
+        memory.resize(new_size, 0);
     }
 
-    // Store the value in big-endian format
     for (int i = 0; i < 32; ++i) {
-        memory[offset + i] = static_cast<uint8_t>((value >> (8 * (31 - i))) & 0xFF);
+        memory[offset + i] = value[i];
     }
 
-    // Check for memory usage limit
     if (memory.size() > memory_limit) {
         throw std::runtime_error("Memory limit exceeded");
     }
@@ -49,9 +58,9 @@ void MoneroVM::mem_store(size_t offset, const uint256_t& value) {
 // Load a value from memory at a specified offset
 uint256_t MoneroVM::mem_load(size_t offset) const {
     if (offset + 31 >= memory.size()) throw std::runtime_error("Memory access out of bounds");
-    uint256_t result = 0;
+    uint256_t result = {};
     for (int i = 0; i < 32; ++i) {
-        result |= static_cast<uint256_t>(memory[offset + i]) << (8 * (31 - i));
+        result[i] = memory[offset + i];
     }
     return result;
 }
@@ -62,7 +71,7 @@ void MoneroVM::consume_gas(uint64_t amount) {
     gas -= amount;
 }
 
-// Execute bytecode with optional memory limit
+// Execute bytecode 
 bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
     while (pc < bytecode.size()) {
         if (gas == 0) throw std::runtime_error("Out of gas");
@@ -70,61 +79,138 @@ bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
         uint8_t op = bytecode[pc++];
         switch (static_cast<Opcode>(op)) {
             case Opcode::STOP:
-                std::cout << "Execution stopped." << std::endl;
                 return true;
 
-            case Opcode::ADD: {
-                consume_gas(3); // Gas cost for ADD
-                uint256_t a = pop(), b = pop();
-                push(a + b);
+            case Opcode::ADD:
+                consume_gas(VERY_LOW_FEE);
+                push(add_uint256(pop(), pop()));
                 break;
-            }
 
-            case Opcode::MUL: {
-                consume_gas(5); // Gas cost for MUL
-                uint256_t a = pop(), b = pop();
-                push(a * b);
+            case Opcode::MUL:
+                consume_gas(LOW_FEE);
+                {
+                 uint256_t b = pop(), a = pop();
+                 push(multiply_uint256(a, b));
+                }
                 break;
-            }
-
-            case Opcode::SUB: {
-                consume_gas(3); // Gas cost for SUB
-                uint256_t a = pop(), b = pop();
-                push(a - b);
+            case Opcode::SUB:
+                consume_gas(VERY_LOW_FEE);
+                {
+                 uint256_t b = pop(), a = pop();
+                 push(subtract_uint256(a, b));
+                }
                 break;
-            }
 
-            case Opcode::DIV: {
-                consume_gas(5); // Gas cost for DIV
-                uint256_t a = pop(), b = pop();
-                if (b == 0) throw std::runtime_error("Division by zero");
-                push(a / b);
+            case Opcode::DIV:
+                consume_gas(LOW_FEE);
+                {
+                    uint256_t b = pop(), a = pop();
+                    if (b == uint256_from_uint64(0)) {
+                        push(uint256_from_uint64(0)); // Ethereum's EVM returns 0 for division by zero
+                    } else {
+                     push(divide_uint256(a, b));
+                    }
+                }
                 break;
-            }
 
-            case Opcode::MLOAD: {
-                consume_gas(3); // Gas cost for MLOAD
-                size_t offset = static_cast<size_t>(pop());
-                push(mem_load(offset));
+            case Opcode::LT:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t b = pop(), a = pop();
+                    push(uint256_from_uint64(a < b ? 1 : 0));
+                }
                 break;
-            }
 
-            case Opcode::MSTORE: {
-                consume_gas(3); // Gas cost for MSTORE
-                uint256_t value = pop();
-                size_t offset = static_cast<size_t>(pop());
-                mem_store(offset, value);
+            case Opcode::GT:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t b = pop(), a = pop();
+                    push(uint256_from_uint64(a > b ? 1 : 0));
+                }
                 break;
-            }
 
-            // Add more opcodes as needed...
+            case Opcode::EQ:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t b = pop(), a = pop();
+                    push(uint256_from_uint64(a == b ? 1 : 0));
+                }
+                break;
+
+            case Opcode::AND:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t b = pop(), a = pop();
+                    uint256_t result = {};
+                    for (int i = 0; i < 32; ++i) {
+                        result[i] = a[i] & b[i];
+                    }
+                    push(result);
+                }
+                break;
+
+            case Opcode::OR:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t b = pop(), a = pop();
+                    uint256_t result = {};
+                    for (int i = 0; i < 32; ++i) {
+                        result[i] = a[i] | b[i];
+                    }
+                    push(result);
+                }
+                break;
+
+            case Opcode::XOR:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t b = pop(), a = pop();
+                    uint256_t result = {};
+                    for (int i = 0; i < 32; ++i) {
+                        result[i] = a[i] ^ b[i];
+                    }
+                    push(result);
+                }
+                break;
+
+            case Opcode::MLOAD:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t offset = pop();
+                    push(mem_load(uint64_from_uint256(offset)));
+                }
+                break;
+
+            case Opcode::MSTORE:
+                consume_gas(VERY_LOW_FEE);
+                {
+                    uint256_t value = pop();
+                    uint256_t offset = pop();
+                    mem_store(uint64_from_uint256(offset), value);
+                }
+                break;
+
+            case Opcode::JUMP:
+                consume_gas(MID_FEE);
+                pc = uint64_from_uint256(pop());
+                break;
+
+            case Opcode::JUMPI:
+                consume_gas(HIGH_FEE);
+                {
+                    uint256_t condition = pop();
+                    uint256_t dest = pop();
+                    if (uint64_from_uint256(condition) != 0) pc = uint64_from_uint256(dest);
+                }
+                break;
+
+            case Opcode::REVERT:
+                consume_gas(0); // No cost for revert itself, but gas used up to this point is not returned
+                throw std::runtime_error("Revert");
 
             default:
                 throw std::runtime_error("Unknown opcode");
         }
-
-        // Log remaining gas after each operation
-        std::cout << "Remaining gas: " << gas << std::endl;
     }
     return true;
 }
@@ -133,64 +219,75 @@ bool MoneroVM::validate_bytecode(const std::vector<uint8_t>& bytecode) {
     size_t pc = 0;
     uint64_t max_stack_size = 0;
     int64_t current_stack_size = 0;
+    std::map<size_t, bool> jumpdests;
 
     while (pc < bytecode.size()) {
         uint8_t op = bytecode[pc++];
         switch (static_cast<Opcode>(op)) {
             case Opcode::STOP:
-                // No stack change
+                break;
+
+            case Opcode::JUMP:
+                if (!jumpdests[uint64_from_uint256(peek(0))]) {
+                    return false; // Jump to non-jumpdest
+                }
+                current_stack_size -= 1;
+                break;
+
+            case Opcode::JUMPI:
+                if (!jumpdests[uint64_from_uint256(peek(1))]) {
+                    return false; // Jump to non-jumpdest
+                }
+                current_stack_size -= 2;
                 break;
 
             case Opcode::ADD:
             case Opcode::MUL:
             case Opcode::SUB:
             case Opcode::DIV:
-                // Pops 2 values, pushes 1
+            case Opcode::LT:
+            case Opcode::GT:
+            case Opcode::EQ:
+            case Opcode::AND:
+            case Opcode::OR:
+            case Opcode::XOR:
                 current_stack_size -= 1;
                 break;
 
             case Opcode::MLOAD:
-                // Pops 1 value, pushes 1 value
-                break;
+                break; // No net change in stack size
 
             case Opcode::MSTORE:
-                // Pops 2 values, stores but doesn't push
                 current_stack_size -= 2;
                 break;
 
-            // Add validation for other opcodes here...
+            case Opcode::REVERT:
+                return true; // Revert ends execution
 
             default:
-                std::cerr << "Validation: Unknown opcode at position " << (pc - 1) << std::endl;
-                return false;
+                if (op == 0x5B) { // JUMPDEST
+                    jumpdests[pc - 1] = true;
+                } else {
+                    return false; // Unknown opcode
+                }
         }
 
-        // Check for stack underflow
         if (current_stack_size < 0) {
-            std::cerr << "Validation: Stack underflow at opcode position " << (pc - 1) << std::endl;
-            return false;
+            return false; // Stack underflow
         }
 
-        // Keep track of max stack size
         max_stack_size = std::max(max_stack_size, static_cast<uint64_t>(current_stack_size));
-
-        // Check if max stack size exceeds the limit
         if (max_stack_size > 1024) {
-            std::cerr << "Validation: Maximum stack size exceeded during validation" << std::endl;
-            return false;
+            return false; // Maximum stack size exceeded
         }
     }
 
-    // Check if there's anything left on the stack at the end.
     if (current_stack_size != 0) {
-        std::cerr << "Validation: Stack not empty at end of bytecode" << std::endl;
-        return false;
+        return false; // Stack not empty at end of bytecode
     }
 
-    std::cout << "Bytecode validation successful. Max stack size was " << max_stack_size << std::endl;
     return true;
 }
-
 
 // Get the remaining gas
 uint64_t MoneroVM::get_remaining_gas() const {
@@ -200,4 +297,25 @@ uint64_t MoneroVM::get_remaining_gas() const {
 // Optional: Set memory limit if it's not passed in constructor
 void MoneroVM::set_memory_limit(uint64_t new_memory_limit) {
     memory_limit = new_memory_limit;
+}
+
+// Load bytecode into VM for deployment or execution
+void MoneroVM::load_bytecode(const std::string& hex_bytecode) {
+    std::string bytecode_str;
+    if (!epee::string_tools::parse_hexstr_to_binbuff(hex_bytecode, bytecode_str)) {
+        throw std::runtime_error("Failed to convert bytecode hex to binary.");
+    }
+    bytecode.assign(bytecode_str.begin(), bytecode_str.end());
+}
+
+// Getter for bytecode
+const std::vector<uint8_t>& MoneroVM::get_bytecode() const {
+    return bytecode;
+}
+// Helper for outputting uint256_t
+std::ostream& operator<<(std::ostream& os, const uint256_t& val) {
+    for (int i = 31; i >= 0; --i) {
+        os << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(val[i]);
+    }
+    return os;
 }
