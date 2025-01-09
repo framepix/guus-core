@@ -216,34 +216,18 @@ bool MoneroVM::execute(const std::vector<uint8_t>& bytecode) {
 }
 
 bool MoneroVM::validate_bytecode(const std::vector<uint8_t>& bytecode) {
-    size_t pc = 0;
-    uint64_t max_stack_size = 0;
-    int64_t current_stack_size = 0;
-    std::map<size_t, bool> jumpdests;
-
-    while (pc < bytecode.size()) {
-        uint8_t op = bytecode[pc++];
-        switch (static_cast<Opcode>(op)) {
-            case Opcode::STOP:
+    int stack_size = 0;
+    for (size_t pc = 0; pc < bytecode.size(); ++pc) {
+        Opcode op = static_cast<Opcode>(bytecode[pc]);
+        switch (op) {
+            case Opcode::MLOAD:
+            case Opcode::MSTORE:
+                if (stack_size < 1) return false; // Needs at least one item for address
+                stack_size -= 1; // MSTORE pops two, MLOAD pops one
                 break;
-
-            case Opcode::JUMP:
-                if (!jumpdests[uint64_from_uint256(peek(0))]) {
-                    return false; // Jump to non-jumpdest
-                }
-                current_stack_size -= 1;
-                break;
-
-            case Opcode::JUMPI:
-                if (!jumpdests[uint64_from_uint256(peek(1))]) {
-                    return false; // Jump to non-jumpdest
-                }
-                current_stack_size -= 2;
-                break;
-
             case Opcode::ADD:
-            case Opcode::MUL:
             case Opcode::SUB:
+            case Opcode::MUL:
             case Opcode::DIV:
             case Opcode::LT:
             case Opcode::GT:
@@ -251,42 +235,21 @@ bool MoneroVM::validate_bytecode(const std::vector<uint8_t>& bytecode) {
             case Opcode::AND:
             case Opcode::OR:
             case Opcode::XOR:
-                current_stack_size -= 1;
+                if (stack_size < 2) return false; // Needs two items for binary operations
+                stack_size -= 1; // Pops two, pushes one back
                 break;
-
-            case Opcode::MLOAD:
-                break; // No net change in stack size
-
-            case Opcode::MSTORE:
-                current_stack_size -= 2;
+            case Opcode::JUMPI:
+                if (stack_size < 2) return false; // Needs condition and destination
+                stack_size -= 2; // Pops both
                 break;
-
-            case Opcode::REVERT:
-                return true; // Revert ends execution
-
+            // Add more cases as needed...
             default:
-                if (op == 0x5B) { // JUMPDEST
-                    jumpdests[pc - 1] = true;
-                } else {
-                    return false; // Unknown opcode
-                }
+                // Handle other opcodes or unknown opcodes
+                break;
         }
-
-        if (current_stack_size < 0) {
-            return false; // Stack underflow
-        }
-
-        max_stack_size = std::max(max_stack_size, static_cast<uint64_t>(current_stack_size));
-        if (max_stack_size > 1024) {
-            return false; // Maximum stack size exceeded
-        }
+        if (stack_size < 0) return false; // Stack underflow detected
     }
-
-    if (current_stack_size != 0) {
-        return false; // Stack not empty at end of bytecode
-    }
-
-    return true;
+    return stack_size == 0; // Stack should be empty at the end of execution
 }
 
 // Get the remaining gas
