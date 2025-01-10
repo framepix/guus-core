@@ -26,7 +26,7 @@ set(UNBOUND_HASH SHA256=6701534c938eb019626601191edc6d012fc534c09d2418d5b92827db
     CACHE STRING "unbound source hash")
 
 set(BOOST_VERSION 1.73.0 CACHE STRING "boost version")
-set(BOOST_MIRROR ${LOCAL_MIRROR} https://boostorg.jfrog.io/artifactory/main/release/${BOOST_VERSION}/source
+set(BOOST_MIRROR ${LOCAL_MIRROR} https://downloads.sourceforge.net/project/boost/boost/${BOOST_VERSION}/
     CACHE STRING "boost download mirror(s)")
 string(REPLACE "." "_" BOOST_VERSION_ ${BOOST_VERSION})
 set(BOOST_SOURCE boost_${BOOST_VERSION_}.tar.gz)
@@ -288,11 +288,11 @@ build_external(boost
       --with-libraries=chrono,filesystem,program_options,system,thread,date_time,regex,serialization,locale,atomic
   BUILD_COMMAND
         ./b2 -d0 variant=release link=static runtime-link=static optimization=speed ${boost_extra}
-      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC -DBOOST_VARIANT_LIMIT_TYPES=30 -DBOOST_MPL_LIMIT_LIST_SIZE=30" cxxstd=14 visibility=global
+      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC" cxxstd=14 visibility=global
       --disable-icu --user-config=${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam
   INSTALL_COMMAND
     ./b2 -d0 variant=release link=static runtime-link=static optimization=speed ${boost_extra}
-      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC -DBOOST_VARIANT_LIMIT_TYPES=30 -DBOOST_MPL_LIMIT_LIST_SIZE=30" cxxstd=14 visibility=global
+      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC" cxxstd=14 visibility=global
       --disable-icu --user-config=${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam
       install
   BUILD_BYPRODUCTS
