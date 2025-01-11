@@ -3438,7 +3438,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     }
     else if (tx.type == txtype::key_image_unlock)
     {
-      cryptonote::tx_extra_tx_key_image_unlock unlock;
+       cryptonote::tx_extra_tx_key_image_unlock unlock;
       if (!cryptonote::get_field_from_tx_extra(tx.extra, unlock))
       {
         MERROR("TX extra didn't have key image unlock in the tx_extra");

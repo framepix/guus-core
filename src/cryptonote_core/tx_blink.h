@@ -33,7 +33,7 @@
 #include "frame_pix_rules.h"
 #include <iostream>
 #include <shared_mutex>
-#include <variant>
+#include <boost/thread/shared_mutex.hpp>
 
 namespace frame_pixs {
 class frame_pix_list;
@@ -65,7 +65,7 @@ public:
     std::variant<transaction, crypto::hash> tx;
 
     /// Returns the transaction hash
-    crypto::hash get_txhash() const { return std::visit(tx_hash_visitor{}, tx); }
+        crypto::hash get_txhash() const { return std::visit(tx_hash_visitor{}, tx); }
 
     class signature_verification_error : public std::runtime_error {
         using std::runtime_error::runtime_error;

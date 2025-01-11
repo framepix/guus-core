@@ -42,8 +42,6 @@
 #include <unordered_map>
 #include <boost/multiprecision/cpp_int.hpp>
 #include "cryptonote_core/cryptonote_tx_utils.h"
-#include "cryptonote_basic/smart_contract_utils.h"
-#include <evmc/evmc.h>
 #include <vector>
 #include "serialization/variant.h"
 #include "common/meta.h"
@@ -67,9 +65,9 @@ namespace cryptonote
   bool parse_and_validate_tx_from_blob(const blobdata& tx_blob, transaction& tx, crypto::hash& tx_hash);
   bool parse_and_validate_tx_from_blob(const blobdata& tx_blob, transaction& tx);
   bool parse_and_validate_tx_base_from_blob(const blobdata& tx_blob, transaction& tx);
-  bool is_v1_tx(const blobdata_ref& tx_blob);
-  bool is_v1_tx(const blobdata& tx_blob);
-
+ // bool is_v1_tx(const blobdata_ref& tx_blob);
+  //bool is_v1_tx(const blobdata& tx_blob);
+  bool is_v1_tx(const std::string_view tx_blob);
   // skip_fields: How many fields of type <T> to skip
   template<typename T>
   bool find_tx_extra_field_by_type(const std::vector<tx_extra_field>& tx_extra_fields, T& field, size_t skip_fields = 0)
@@ -93,6 +91,16 @@ namespace cryptonote
 
   bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields);
   bool sort_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<uint8_t> &sorted_tx_extra, bool allow_partial = false);
+
+  template <typename T>
+  bool get_field_from_tx_extra(const std::vector<uint8_t>& tx_extra, T& field, size_t skip = 0)
+  {
+    std::vector<tx_extra_field> tx_extra_fields;
+    return
+      parse_tx_extra(tx_extra, tx_extra_fields) &&
+      find_tx_extra_field_by_type(tx_extra_fields, field, skip);
+  }
+
   crypto::public_key get_tx_pub_key_from_extra(const std::vector<uint8_t>& tx_extra, size_t pk_index = 0);
   crypto::public_key get_tx_pub_key_from_extra(const transaction_prefix& tx, size_t pk_index = 0);
   crypto::public_key get_tx_pub_key_from_extra(const transaction& tx, size_t pk_index = 0);

@@ -35,6 +35,7 @@
 #include <algorithm>
 #include "wipeable_string.h"
 #include "string_tools.h"
+#include <lokimq/hex.h>
 #include "common/i18n.h"
 #include "common/osrb.h"
 #include "serialization/string.h"
@@ -48,7 +49,6 @@
 #include "cryptonote_core/frame_pix_voting.h"
 #include "cryptonote_core/guus_name_system.h"
 
-using namespace epee;
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "cn"
@@ -418,7 +418,7 @@ namespace cryptonote
       str_amount.append(default_decimal_point - fraction_size, '0');
     }
 
-    return string_tools::get_xtype_from_string(amount, str_amount);
+    return epee::string_tools::get_xtype_from_string(amount, str_amount);
   }
   //---------------------------------------------------------------
   uint64_t get_transaction_weight(const transaction &tx, size_t blob_size)
@@ -494,12 +494,11 @@ namespace cryptonote
     return r;
   }
   //---------------------------------------------------------------
-  bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields)
-  {
+    bool parse_tx_extra(const std::vector<uint8_t>& tx_extra, std::vector<tx_extra_field>& tx_extra_fields) {
     tx_extra_fields.clear();
 
-    if(tx_extra.empty())
-      return true;
+    if (tx_extra.empty())
+        return true;
 
     BINARY_ARCHIVE_STREAM(iss, tx_extra);
     binary_archive<false> ar(iss);
@@ -512,75 +511,29 @@ namespace cryptonote
         }
         tx_extra_fields.push_back(field);
     }
-
-/*    for (const auto& field : tx_extra_fields) {
-    if (std::holds_alternative<tx_extra_tagged_field>(field)) {
-        const auto& extra_tag = std::get<tx_extra_tagged_field>(field);
-
-        // Get the smart contract data using get_if on the variant
-        // Ensure const correctness by passing the reference to get_if correctly
-        if (auto* sc_data = std::get_if<cryptonote::tx_extra_smart_contract_data>(&extra_tag.data)) {
-            LOG_PRINT_L1("Smart contract data found: bytecode size = " << sc_data->bytecode.size()
-                          << ", gas limit = " << sc_data->gas_limit
-                          << ", gas price = " << sc_data->gas_price);
-        } else {
-            LOG_ERROR("Unexpected type in tx_extra_tagged_field data. Expected smart contract data.");
-        }
-        }
-     }*/
-
     return true;
-   }
-  //--------------------------------------------------------------
-  bool parse_tx_extra_smart_contract_data(const std::vector<uint8_t>& extra, tx_extra_smart_contract_data& sc_data) {
-    try {
-        // Find the tag for smart contract data
-        auto it = std::find(extra.begin(), extra.end(), TX_EXTRA_TAG_SMART_CONTRACT_DATA);
-        if (it == extra.end()) {
-            LOG_ERROR("Smart contract data tag not found in tx_extra.");
-            return false;
-        }
-
-        // Ensure there is data following the tag
-        auto tag_index = std::distance(extra.begin(), it);
-        if (extra.size() <= tag_index + 1) {
-            LOG_ERROR("No serialized data found after smart contract data tag.");
-            return false;
-        }
-
-        // Deserialize the data
-        std::string serialized_data(it + 1, extra.end());
-        if (serialized_data.empty()) {
-            LOG_ERROR("Serialized data is empty after smart contract tag.");
-            return false;
-        }
-
-        bool result = t_serializable_object_from_blob<tx_extra_smart_contract_data>(sc_data, serialized_data);
-        if (!result) {
-            LOG_ERROR("Failed to deserialize smart contract data. Serialized data size: " << serialized_data.size());
-            return false;
-        }
-        return true;
-    } catch (const std::exception& e) {
-        LOG_ERROR("Exception during smart contract data parsing: " << e.what());
-        return false;
-    } catch (...) {
-        LOG_ERROR("Unknown error during smart contract data parsing.");
-        return false;
-    }
    }
   //---------------------------------------------------------------
   template<typename T>
   static bool pick(binary_archive<true> &ar, std::vector<tx_extra_field> &fields, uint8_t tag)
   {
-    std::vector<tx_extra_field>::iterator it;
-    while ((it = std::find_if(fields.begin(), fields.end(), [](const tx_extra_field &f) { return f.type() == typeid(T); })) != fields.end())
+    auto it = fields.begin();
+    while (it != fields.end())
     {
-      bool r = ::do_serialize(ar, tag);
-      CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra field");
-      r = ::do_serialize(ar, boost::get<T>(*it));
-      CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra field");
-      fields.erase(it);
+        if (std::holds_alternative<T>(*it)) // Check if the variant holds type T
+        {
+            bool r = ::do_serialize(ar, tag);
+            CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra field");
+            // Get the value of type T from the variant
+            T& value = std::get<T>(*it);
+            r = ::do_serialize(ar, value);
+            CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra field");
+            it = fields.erase(it); // erase returns the new iterator position
+        }
+        else
+        {
+            ++it;
+        }
     }
     return true;
   }
@@ -606,7 +559,7 @@ namespace cryptonote
       bool r = ::do_serialize(ar, field);
       if (!r)
       {
-        MWARNING("failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
+        MWARNING("failed to deserialize extra field. extra = " << epee::string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
         if (!allow_partial)
           return false;
         break;
@@ -620,7 +573,7 @@ namespace cryptonote
     }
     if (!::serialization::check_stream_state(ar))
     {
-      MWARNING("failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
+      MWARNING("failed to deserialize extra field. extra = " << epee::string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
       if (!allow_partial)
         return false;
     }
@@ -730,7 +683,7 @@ namespace cryptonote
     return get_additional_tx_pub_keys_from_extra(tx.extra);
   }
   //---------------------------------------------------------------
-  static bool add_tx_extra_field_to_tx_extra(std::vector<uint8_t>& tx_extra, tx_extra_field &field)
+    static bool add_tx_extra_field_to_tx_extra(std::vector<uint8_t>& tx_extra, tx_extra_field &field)
   {
     std::ostringstream oss;
     binary_archive<true> ar(oss);
@@ -972,31 +925,30 @@ namespace cryptonote
     add_tx_extra_field_to_tx_extra(tx_extra, field);
   }
   //---------------------------------------------------------------
-  bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra, const std::type_info &type)
+  bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra, const size_t variant_index)
   {
     if (tx_extra.empty())
       return true;
-    BINARY_ARCHIVE_STREAM(iss, tx_extra);
-    binary_archive<false> ar(iss);
-    std::ostringstream oss;
-    binary_archive<true> newar(oss);
 
-    bool eof = false;
-    while (!eof)
-    {
-      tx_extra_field field;
-      bool r = ::do_serialize(ar, field);
-      CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
-      if (field.type() != type)
-        ::do_serialize(newar, field);
+    serialization::binary_string_unarchiver ar{tx_extra};
+    serialization::binary_string_archiver newar;
 
-      std::ios_base::iostate state = iss.rdstate();
-      eof = (EOF == iss.peek());
-      iss.clear(state);
+    try {
+      do
+      {
+        tx_extra_field field;
+        value(ar, field);
+
+        if (field.index() != variant_index)
+          value(newar, field);
+      } while (ar.remaining_bytes() > 0);
+    } catch (const std::exception& e) {
+      LOG_PRINT_L1(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << lokimq::to_hex(tx_extra.begin(), tx_extra.end()));
+      return false;
     }
-    CHECK_AND_NO_ASSERT_MES_L1(::serialization::check_stream_state(ar), false, "failed to deserialize extra field. extra = " << string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
+
+    std::string s = newar.str();
     tx_extra.clear();
-    std::string s = oss.str();
     tx_extra.reserve(s.size());
     std::copy(s.begin(), s.end(), std::back_inserter(tx_extra));
     return true;
@@ -1154,8 +1106,8 @@ namespace cryptonote
   //---------------------------------------------------------------
   std::string short_hash_str(const crypto::hash& h)
   {
-    std::string res = string_tools::pod_to_hex(h);
-    CHECK_AND_ASSERT_MES(res.size() == 64, res, "wrong hash256 with string_tools::pod_to_hex conversion");
+    std::string res = epee::string_tools::pod_to_hex(h);
+    CHECK_AND_ASSERT_MES(res.size() == 64, res, "wrong hash256 with epee::string_tools::pod_to_hex conversion");
     auto erased_pos = res.erase(8, 48);
     res.insert(8, "....");
     return res;

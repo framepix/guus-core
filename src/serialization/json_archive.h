@@ -51,7 +51,7 @@ struct json_archive_base
 {
   typedef Stream stream_type;
   typedef json_archive_base<Stream, IsSaving> base_type;
-  typedef boost::mpl::bool_<IsSaving> is_saving;
+  typedef std::integral_constant<bool, IsSaving> is_saving;
 
   typedef const char *variant_tag_type;
 
