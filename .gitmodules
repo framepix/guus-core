@@ -12,4 +12,4 @@
 	url = https://github.com/framepix/randomx
 [submodule "external/loki-mq"]
 	path = external/loki-mq
-	url = https://github.com/framepix/loki-mq
+	url = https://github.com/framepix/oxen-mq
