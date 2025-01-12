@@ -267,20 +267,12 @@ namespace cryptonote
     return true;
   }
   //---------------------------------------------------------------
-  bool is_v1_tx(const blobdata_ref& tx_blob)
+  bool is_v1_tx(const std::string_view tx_blob)
   {
     uint64_t version;
-    const char* begin = static_cast<const char*>(tx_blob.data());
-    const char* end = begin + tx_blob.size();
-    int read = tools::read_varint(begin, end, version);
-    if (read <= 0)
+    if (tools::read_varint(tx_blob, version) <= 0)
       throw std::runtime_error("Internal error getting transaction version");
     return version <= 1;
-  }
-  //---------------------------------------------------------------
-  bool is_v1_tx(const blobdata& tx_blob)
-  {
-    return is_v1_tx(blobdata_ref{tx_blob.data(), tx_blob.size()});
   }
   //---------------------------------------------------------------
   bool generate_key_image_helper(const account_keys& ack, const std::unordered_map<crypto::public_key, subaddress_index>& subaddresses, const crypto::public_key& out_key, const crypto::public_key& tx_public_key, const std::vector<crypto::public_key>& additional_tx_public_keys, size_t real_output_index, keypair& in_ephemeral, crypto::key_image& ki, hw::device &hwdev)
@@ -929,26 +921,27 @@ namespace cryptonote
   {
     if (tx_extra.empty())
       return true;
+    BINARY_ARCHIVE_STREAM(iss, tx_extra);
+    binary_archive<false> ar(iss);
+    std::ostringstream oss;
+    binary_archive<true> newar(oss);
 
-    serialization::binary_string_unarchiver ar{tx_extra};
-    serialization::binary_string_archiver newar;
+    bool eof = false;
+        while (!eof)
+    {
+      tx_extra_field field;
+      bool r = ::do_serialize(ar, field);
+      CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to deserialize extra field. extra = " << epee::string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
+    if (!std::holds_alternative<tx_extra_padding>(field))
+    ::do_serialize(newar, field);
 
-    try {
-      do
-      {
-        tx_extra_field field;
-        value(ar, field);
-
-        if (field.index() != variant_index)
-          value(newar, field);
-      } while (ar.remaining_bytes() > 0);
-    } catch (const std::exception& e) {
-      LOG_PRINT_L1(__func__ << ": failed to deserialize extra field: " << e.what() << "; extra = " << lokimq::to_hex(tx_extra.begin(), tx_extra.end()));
-      return false;
+      std::ios_base::iostate state = iss.rdstate();
+      eof = (EOF == iss.peek());
+      iss.clear(state);
     }
-
-    std::string s = newar.str();
+    CHECK_AND_NO_ASSERT_MES_L1(::serialization::check_stream_state(ar), false, "failed to deserialize extra field. extra = " << epee::string_tools::buff_to_hex_nodelimer(std::string(reinterpret_cast<const char*>(tx_extra.data()), tx_extra.size())));
     tx_extra.clear();
+    std::string s = oss.str();
     tx_extra.reserve(s.size());
     std::copy(s.begin(), s.end(), std::back_inserter(tx_extra));
     return true;

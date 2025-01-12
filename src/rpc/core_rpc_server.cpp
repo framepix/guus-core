@@ -1768,7 +1768,6 @@ namespace cryptonote
       block blk;
       bool have_block = m_core.get_block_by_hash(block_hash, blk);
       if (!have_block)
-<<<<<<< HEAD
       {
         error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
         error_resp.message = "Internal error: can't get block by height. Height = " + boost::lexical_cast<std::string>(h) + ". Hash = " + epee::string_tools::pod_to_hex(block_hash) + '.';

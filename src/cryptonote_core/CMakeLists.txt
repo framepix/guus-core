@@ -56,10 +56,7 @@ target_link_libraries(cryptonote_core
     Boost::program_options
     Boost::chrono
     extra
-    systemd
-    intx
-    ethash
-    evmone)
+    systemd)
 
 if(PER_BLOCK_CHECKPOINT)
   target_compile_definitions(cryptonote_core PUBLIC PER_BLOCK_CHECKPOINT)
