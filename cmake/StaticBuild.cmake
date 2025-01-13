@@ -5,32 +5,32 @@
 
 set(LOCAL_MIRROR "" CACHE STRING "local mirror path/URL for lib downloads")
 
-set(OPENSSL_VERSION 1.1.1g CACHE STRING "openssl version")
+set(OPENSSL_VERSION 3.0.12 CACHE STRING "openssl version")
 set(OPENSSL_MIRROR ${LOCAL_MIRROR} https://www.openssl.org/source CACHE STRING "openssl download mirror(s)")
 set(OPENSSL_SOURCE openssl-${OPENSSL_VERSION}.tar.gz)
-set(OPENSSL_HASH SHA256=ddb04774f1e32f0c49751e21b67216ac87852ceb056b75209af2443400636d46
+set(OPENSSL_HASH SHA256=f93c9e8edde5e9166119de31755fc87b4aa34863662f67ddfcba14d0b6b69b61
     CACHE STRING "openssl source hash")
 
-set(EXPAT_VERSION 2.2.9 CACHE STRING "expat version")
+set(EXPAT_VERSION 2.5.0 CACHE STRING "expat version")
 string(REPLACE "." "_" EXPAT_TAG "R_${EXPAT_VERSION}")
 set(EXPAT_MIRROR ${LOCAL_MIRROR} https://github.com/libexpat/libexpat/releases/download/${EXPAT_TAG}
     CACHE STRING "expat download mirror(s)")
 set(EXPAT_SOURCE expat-${EXPAT_VERSION}.tar.xz)
-set(EXPAT_HASH SHA512=e082874efcc4b00709e2c0192c88fb15dfc4f33fc3a2b09e619b010ea93baaf7e7572683f738463db0ce2350cab3de48a0c38af6b74d1c4f5a9e311f499edab0
+set(EXPAT_HASH SHA256=ef2420f0232c087801abf705e89ae65f6257df6b7931d37846a193ef2e8cdcbe
     CACHE STRING "expat source hash")
 
-set(UNBOUND_VERSION 1.10.1 CACHE STRING "unbound version")
+set(UNBOUND_VERSION 1.16.0 CACHE STRING "unbound version")
 set(UNBOUND_MIRROR ${LOCAL_MIRROR} https://nlnetlabs.nl/downloads/unbound CACHE STRING "unbound download mirror(s)")
 set(UNBOUND_SOURCE unbound-${UNBOUND_VERSION}.tar.gz)
-set(UNBOUND_HASH SHA256=b73677c21a71cf92f15cc8cfe76a3d875e40f65b6150081c39620b286582d536
+set(UNBOUND_HASH SHA256=6701534c938eb019626601191edc6d012fc534c09d2418d5b92827db0cbe48a5
     CACHE STRING "unbound source hash")
 
 set(BOOST_VERSION 1.73.0 CACHE STRING "boost version")
-set(BOOST_MIRROR ${LOCAL_MIRROR} https://dl.bintray.com/boostorg/release/${BOOST_VERSION}/source
+set(BOOST_MIRROR ${LOCAL_MIRROR} https://downloads.sourceforge.net/project/boost/boost/${BOOST_VERSION}/
     CACHE STRING "boost download mirror(s)")
 string(REPLACE "." "_" BOOST_VERSION_ ${BOOST_VERSION})
-set(BOOST_SOURCE boost_${BOOST_VERSION_}.tar.bz2)
-set(BOOST_HASH SHA256=4eb3b8d442b426dc35346235c8733b5ae35ba431690e38c6a8263dce9fcbb402
+set(BOOST_SOURCE boost_${BOOST_VERSION_}.tar.gz)
+set(BOOST_HASH SHA256=9995e192e68528793755692917f9eb6422f3052a53c5e13ba278a228af6c7acf
     CACHE STRING "boost source hash")
 
 set(NCURSES_VERSION 6.2 CACHE STRING "ncurses version")
@@ -203,8 +203,9 @@ if(CMAKE_CROSSCOMPILING)
 endif()
 build_external(openssl
   CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env CC=${deps_cc} ${openssl_system_env} ./config
-    --prefix=${DEPS_DESTDIR} no-shared no-capieng no-dso no-dtls1 no-ec_nistp_64_gcc_128 no-gost
-    no-heartbeats no-md2 no-rc5 no-rdrand no-rfc3779 no-sctp no-ssl-trace no-ssl2 no-ssl3
+    --prefix=${DEPS_DESTDIR} --openssldir=${DEPS_DESTDIR}/etc/openssl --libdir=${DEPS_DESTDIR}/lib
+   no-shared no-capieng no-dso no-dtls1 no-ec_nistp_64_gcc_128 no-gost
+    no-tests no-md2 no-rc5 no-rdrand no-rfc3779 no-sctp no-ssl-trace  no-ssl3
     no-static-engine no-tests no-weak-ssl-ciphers no-zlib no-zlib-dynamic "CFLAGS=-O2 ${flto}"
   INSTALL_COMMAND make install_sw
   BUILD_BYPRODUCTS
@@ -214,7 +215,11 @@ build_external(openssl
 add_static_target(OpenSSL::SSL openssl_external libssl.a)
 add_static_target(OpenSSL::Crypto openssl_external libcrypto.a)
 set(OPENSSL_INCLUDE_DIR ${DEPS_DESTDIR}/include)
-set(OPENSSL_VERSION 1.1.1)
+set(OPENSSL_VERSION 3.0.9)
+set(OPENSSL_VERSION 3.0.9 CACHE STRING "OpenSSL version")
+
+# Use the specified OpenSSL version in the build
+set(OPENSSL_PATH ${openssl_external}/${OPENSSL_VERSION} CACHE STRING "Path to openssl_external")
 
 
 
@@ -281,10 +286,13 @@ build_external(boost
     ${CMAKE_COMMAND} -E env ${boost_bootstrap_cxx}
     ./bootstrap.sh --without-icu --prefix=${DEPS_DESTDIR} --with-toolset=${boost_toolset}
       --with-libraries=chrono,filesystem,program_options,system,thread,date_time,regex,serialization,locale,atomic
-  BUILD_COMMAND true
+  BUILD_COMMAND
+        ./b2 -d0 variant=release link=static runtime-link=static optimization=speed ${boost_extra}
+      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC" cxxstd=14 visibility=global
+      --disable-icu --user-config=${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam
   INSTALL_COMMAND
     ./b2 -d0 variant=release link=static runtime-link=static optimization=speed ${boost_extra}
-      threading=multi threadapi=${boost_threadapi} cxxflags=-fPIC cxxstd=14 visibility=global
+      threading=multi threadapi=${boost_threadapi} cxxflags="-fPIC" cxxstd=14 visibility=global
       --disable-icu --user-config=${CMAKE_CURRENT_BINARY_DIR}/user-config.bjam
       install
   BUILD_BYPRODUCTS
