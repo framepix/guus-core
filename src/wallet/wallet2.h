@@ -65,7 +65,7 @@
 #include "node_rpc_proxy.h"
 #include "message_store.h"
 #include "wallet_light_rpc.h"
-
+#include "cryptonote_core/blockchain.h"
 #include "common/guus_integration_test_hooks.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
@@ -205,7 +205,7 @@ private:
   {
   public:
     hashchain(): m_genesis(crypto::null_hash), m_offset(0) {}
-
+    cryptonote::nft_metadata get_nft_metadata(uint64_t nft_id) const;
     size_t size() const { return m_blockchain.size() + m_offset; }
     size_t offset() const { return m_offset; }
     const crypto::hash &genesis() const { return m_genesis; }
@@ -330,6 +330,10 @@ private:
     friend class wallet_keys_unlocker;
     friend class wallet_device_callback;
   public:
+    //const cryptonote::Blockchain& get_blockchain() const;
+         bool transfer_nft(uint64_t nft_id, const std::vector<uint8_t>& new_encrypted_address);
+         //cryptonote::Blockchain& get_blockchain() { return m_blockchain; }
+    cryptonote::nft_metadata get_nft_metadata(uint64_t nft_id) const;
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
     enum RefreshType {
       RefreshFull,
@@ -1582,6 +1586,7 @@ private:
 
     std::atomic<bool> m_long_poll_disabled;
   private:
+        std::vector<cryptonote::nft_metadata> m_nft_list; // Ensure this member is defined and maintained
     /*!
      * \brief  Stores wallet information to wallet file.
      * \param  keys_file_name Name of wallet file

@@ -170,6 +170,13 @@ namespace cryptonote
     bool locked_transfer(const std::vector<std::string> &args);
     bool locked_sweep_all(const std::vector<std::string> &args);
 
+    bool create_nft(const std::vector<std::string>& args);
+    bool create_nft(const std::vector<std::string>& args, cryptonote::Blockchain& blockchain_ref);
+    bool get_nft(const std::vector<std::string>& args);
+    //bool transfer_nft(const std::vector<std::string>& args);
+    bool list_nfts(const std::vector<std::string>& args);
+    bool redeem_nft(const std::vector<std::string>& args);
+    
     bool stake(const std::vector<std::string> &args_);
     bool register_frame_pix(const std::vector<std::string> &args_);
     bool request_stake_unlock(const std::vector<std::string> &args_);

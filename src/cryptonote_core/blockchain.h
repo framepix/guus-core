@@ -61,10 +61,35 @@
 
 struct sqlite3;
 namespace frame_pixs { class frame_pix_list; };
-namespace tools { class Notify; }
+namespace tools { class Notify; 
 
+    template<typename T>
+    std::string type_to_hex(const T& v) {
+        std::stringstream ss;
+        ss << std::hex << std::setfill('0');
+        for (const auto& byte : v) {
+            ss << std::setw(2) << static_cast<unsigned>(byte);
+        }
+        return ss.str();
+    }
+
+}
+
+struct nft_metadata {
+    std::string nft_name;
+    std::string nft_description;
+    uint64_t nft_id;
+    std::vector<uint8_t> encrypted_address;
+
+    template <typename Archive>
+    void serialize(Archive& ar, const unsigned int /* version */) {
+        ar & nft_name & nft_description & nft_id & encrypted_address;
+    }
+};
 namespace cryptonote
 {
+
+//  std::vector<nft_metadata> m_nft_list;  // Declare m_nft_list as a member variable
   struct block_and_checkpoint
   {
     cryptonote::block block;
@@ -105,6 +130,13 @@ namespace cryptonote
     /**
      * @brief container for passing a block and metadata about it on the blockchain
      */
+     std::vector<nft_metadata> m_nft_list;  // Declare m_nft_list as a member variable
+     std::vector<nft_metadata> list_all_nfts() const;
+     bool update_nft(const cryptonote::nft_metadata& nft);
+    std::vector<nft_metadata> get_nfts_by_address(const std::vector<uint8_t>& encrypted_address) const;
+    cryptonote::nft_metadata get_nft_by_id(uint64_t nft_id) const;
+
+    bool persist_nft_changes(const cryptonote::nft_metadata& nft);
     struct block_extended_info
     {
       block_extended_info() = default;
@@ -1057,9 +1089,22 @@ namespace cryptonote
 
     const lns::name_system_db &name_system_db() const { return m_lns_db; }
 
+    void add_nft(const nft_metadata& nft);
+
+    //nft_metadata get_nft_by_id(uint64_t nft_id) const;
+
+
+   void get_nft_details(uint64_t nft_id) const;
+
+   void store_nft_state();
+
+   void load_nft_state();
+
 #ifndef IN_UNIT_TESTS
   private:
 #endif
+
+    std::unordered_map<uint64_t, cryptonote::nft_metadata> m_nft_map;
 
     bool load_missing_blocks_into_guus_subsystems();
 

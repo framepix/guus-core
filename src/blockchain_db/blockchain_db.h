@@ -39,6 +39,7 @@
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/difficulty.h"
 #include "cryptonote_basic/hardfork.h"
+#include <sqlite3.h>
 
 /** \file
  * Cryptonote Blockchain Database Interface
@@ -383,6 +384,7 @@ private:
                 , const crypto::hash& blk_hash
                 ) = 0;
 
+    sqlite3* m_db;  // SQLite database handle
   /**
    * @brief remove data about the top block
    *
@@ -1218,6 +1220,8 @@ public:
    * @return the transaction with the given hash
    */
   virtual transaction get_tx(const crypto::hash& h) const;
+
+  bool update_nft_metadata(uint64_t nft_id, const std::vector<uint8_t>& nft_blob);
 
   /**
    * @brief fetches the transaction base with the given hash

@@ -60,6 +60,7 @@
 #include "common/varint.h"
 #include "common/pruning.h"
 #include "common/lock.h"
+#include "guus_nftdb.h"
 
 #ifdef ENABLE_SYSTEMD
 extern "C" {
@@ -107,8 +108,22 @@ Blockchain::block_extended_info::block_extended_info(const alt_block_data_t &src
 
 //------------------------------------------------------------------
 Blockchain::Blockchain(tx_memory_pool& tx_pool, frame_pixs::frame_pix_list& frame_pix_list):
-  m_db(), m_tx_pool(tx_pool), m_hardfork(NULL), m_timestamps_and_difficulties_height(0), m_current_block_cumul_weight_limit(0), m_current_block_cumul_weight_median(0),
-  m_max_prepare_blocks_threads(4), m_db_sync_on_blocks(true), m_db_sync_threshold(1), m_db_sync_mode(db_async), m_db_default_sync(false), m_fast_sync(true), m_show_time_stats(false), m_sync_counter(0), m_bytes_to_sync(0), m_cancel(false),
+  m_db(), 
+  m_tx_pool(tx_pool), 
+  m_hardfork(NULL), 
+  m_timestamps_and_difficulties_height(0), 
+  m_current_block_cumul_weight_limit(0), 
+  m_current_block_cumul_weight_median(0),
+  m_max_prepare_blocks_threads(4), 
+  m_db_sync_on_blocks(true), 
+  m_db_sync_threshold(1), 
+  m_db_sync_mode(db_async), 
+  m_db_default_sync(false), 
+  m_fast_sync(true), 
+  m_show_time_stats(false), 
+  m_sync_counter(0), 
+  m_bytes_to_sync(0), 
+  m_cancel(false),
   m_long_term_block_weights_window(CRYPTONOTE_LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE),
   m_long_term_effective_median_block_weight(0),
   m_long_term_block_weights_cache_tip_hash(crypto::null_hash),
@@ -118,9 +133,14 @@ Blockchain::Blockchain(tx_memory_pool& tx_pool, frame_pixs::frame_pix_list& fram
   m_frame_pix_list(frame_pix_list),
   m_btc_valid(false),
   m_batch_success(true),
-  m_prepare_height(0)
+  m_prepare_height(0),
+  m_nft_list()  // Initialize the NFT list
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
+  if (CRYPTONOTE_NFT_SUPPORTED) {
+    MGINFO("Blockchain initialized with NFT support!");
+    // m_nft_list = nft_list_type();
+  }
 }
 //------------------------------------------------------------------
 Blockchain::~Blockchain()
@@ -293,6 +313,149 @@ uint64_t Blockchain::get_current_blockchain_height() const
   // lock if it is otherwise needed.
   return m_db->height();
 }
+ //------------------------------------------------------------------
+ // Add an NFT to the blockchain
+void Blockchain::add_nft(const cryptonote::nft_metadata& nft) {
+    if (m_nft_map.find(nft.nft_id) != m_nft_map.end()) {
+        throw std::runtime_error("NFT with the specified ID already exists.");
+    }
+
+    // Add the NFT to the map
+    m_nft_map[nft.nft_id] = nft;
+
+    // Optional: Persist the addition
+    MINFO("NFT ID " << nft.nft_id << " added successfully.");
+}
+ //---------------------------------------------------------------
+ // Retrieve an NFT from the blockchain by ID
+cryptonote::nft_metadata Blockchain::get_nft_by_id(uint64_t nft_id) const {
+    auto it = std::find_if(m_nft_list.begin(), m_nft_list.end(), 
+                           [nft_id](const nft_metadata& nft) { return nft.nft_id == nft_id; });
+    
+    if (it != m_nft_list.end()) {
+        return *it;
+    } else {
+        throw std::runtime_error("NFT not found with ID: " + std::to_string(nft_id));
+    }
+}
+ //----------------------------------------------------------------
+ // List all NFTs
+  std::vector<cryptonote::nft_metadata> Blockchain::list_all_nfts() const {
+    std::vector<cryptonote::nft_metadata> result;
+    for (const auto& nft : m_nft_list) {
+        result.push_back(nft);
+    }
+    return result;
+  }
+
+ //---------------------------------------------------------------
+  void Blockchain::get_nft_details(uint64_t nft_id) const {
+    for (const auto& nft : m_nft_list) {
+        if (nft.nft_id == nft_id) {
+            std::cout << "NFT Details:\n"
+                      << "Name: " << nft.nft_name << "\n"
+                      << "Description: " << nft.nft_description << "\n"
+                      << "ID: " << nft.nft_id << "\n"
+                      << "Creator Address (Encrypted): " << tools::type_to_hex(nft.encrypted_address) << std::endl;
+            return;
+        }
+    }
+    throw std::runtime_error("NFT not found!");
+  }
+//------------------------------------------------------------------
+bool Blockchain::persist_nft_changes(const cryptonote::nft_metadata& nft) {
+    try {
+        // Lock the blockchain for thread safety
+        boost::unique_lock<boost::recursive_mutex> lock(m_blockchain_lock);
+        
+        // Check if the NFT exists in the current storage
+        auto it = m_nft_map.find(nft.nft_id);
+        if (it == m_nft_map.end()) {
+            throw std::runtime_error("NFT with specified ID does not exist in storage.");
+        }
+
+        // Update the NFT entry in the map
+        it->second = nft;
+
+        // Serialize the NFT to a byte blob for storage
+        std::vector<uint8_t> nft_blob = serialize_nft(nft);
+
+        // Use BlockchainDB API to update the NFT metadata in the database
+        if (!m_db->update_nft_metadata(nft.nft_id, nft_blob)) {
+            throw std::runtime_error("Failed to update NFT metadata in the database.");
+        }
+
+        // Log success
+        MGINFO("Persisted changes to NFT (ID: " << nft.nft_id << ") successfully.");
+        return true;
+    } catch (const std::exception& e) {
+        MERROR("Error persisting NFT changes: " << e.what());
+        return false;
+    }
+}
+//------------------------------------------------------------------
+bool Blockchain::update_nft(const cryptonote::nft_metadata& nft) {
+    try {
+        // Lock the blockchain for thread safety (if applicable)
+        boost::unique_lock<boost::recursive_mutex> lock(m_blockchain_lock);
+
+        // Find the NFT in the map
+        auto it = m_nft_map.find(nft.nft_id);
+        if (it == m_nft_map.end()) {
+            throw std::runtime_error("NFT with specified ID not found.");
+        }
+
+        // Update the NFT metadata
+        it->second = nft;
+
+        // Persist changes (update your database or file storage)
+        if (!persist_nft_changes(nft)) {
+            throw std::runtime_error("Failed to persist NFT changes.");
+        }
+
+        MINFO("NFT ID " << nft.nft_id << " updated successfully.");
+        return true;
+
+    } catch (const std::exception& e) {
+        MERROR("Error updating NFT: " << e.what());
+        return false;
+    }
+}
+//------------------------------------------------------------------
+std::vector<cryptonote::nft_metadata> Blockchain::get_nfts_by_address(const std::vector<uint8_t>& encrypted_address) const {
+    std::vector<cryptonote::nft_metadata> matching_nfts;
+
+    // Lock the blockchain for thread safety
+    boost::unique_lock<boost::recursive_mutex> lock(m_blockchain_lock);
+
+    // Iterate through the NFT map and find matches
+    for (const auto& [nft_id, nft] : m_nft_map) {
+        if (nft.encrypted_address == encrypted_address) {
+            matching_nfts.push_back(nft);
+        }
+    }
+
+    return matching_nfts;
+}
+//------------------------------------------------------------------
+/*void Blockchain::store_nft_state() {
+    nft_state state;
+    state.nft_list = m_nft_list;
+    std::stringstream ss;
+    boost::archive::binary_oarchive oarchive(ss);
+    oarchive << state;
+
+    m_db.store_blob("nft_state", ss.str());
+}
+//--------------------------------------------------------------------
+void Blockchain::load_nft_state() {
+    std::string blob = m_db.get_blob("nft_state");
+    std::stringstream ss(blob);
+    boost::archive::binary_iarchive iarchive(ss);
+    nft_state state;
+    iarchive >> state;
+    m_nft_list = state.nft_list;
+}*/
 //------------------------------------------------------------------
 bool Blockchain::load_missing_blocks_into_guus_subsystems()
 {

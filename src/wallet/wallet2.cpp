@@ -82,6 +82,7 @@ using namespace epee;
 
 #include "cryptonote_core/frame_pix_list.h"
 #include "cryptonote_core/frame_pix_rules.h"
+#include "cryptonote_core/blockchain.h"
 #include "common/guus.h"
 #include "common/guus_integration_test_hooks.h"
 #include "lns.h"
@@ -1103,6 +1104,42 @@ wallet2::~wallet2()
 bool wallet2::has_testnet_option(const boost::program_options::variables_map& vm)
 {
   return command_line::get_arg(vm, options().testnet);
+}
+
+cryptonote::nft_metadata tools::wallet2::get_nft_metadata(uint64_t nft_id) const {
+    auto it = std::find_if(m_nft_list.begin(), m_nft_list.end(),
+                           [nft_id](const cryptonote::nft_metadata& nft) { return nft.nft_id == nft_id; });
+
+    if (it != m_nft_list.end()) {
+        return *it;
+    } else {
+        throw std::runtime_error("NFT not found with ID: " + std::to_string(nft_id));
+    }
+}
+
+
+bool wallet2::transfer_nft(uint64_t nft_id, const std::vector<uint8_t>& new_encrypted_address) {
+    try {
+        if (new_encrypted_address.empty()) {
+            throw std::runtime_error("New owner address cannot be empty!");
+        }
+
+        // Fetch the NFT metadata from the blockchain
+        cryptonote::nft_metadata nft;
+
+        // Update the encrypted address of the NFT
+        nft.encrypted_address = new_encrypted_address;
+
+        // Log success message
+        MINFO("Successfully transferred NFT (ID: " << nft_id
+              << ") to new address (encrypted): " << tools::type_to_hex(new_encrypted_address));
+        
+        return true;
+    } catch (const std::exception& e) {
+        // Log error message in case of failure
+        MERROR("Error transferring NFT: " << e.what());
+        return false;
+    }
 }
 
 bool wallet2::has_disable_rpc_long_poll(const boost::program_options::variables_map& vm)

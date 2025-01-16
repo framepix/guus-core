@@ -80,6 +80,14 @@ static_assert(STAKING_PORTIONS % 12 == 0, "Use a multiple of twelve, so that it 
 #define CRYPTONOTE_COINBASE_BLOB_RESERVED_SIZE          600
 #define CRYPTONOTE_DISPLAY_DECIMAL_POINT                9
 
+// Add NFT configuration parameters
+#define CRYPTONOTE_NFT_SUPPORTED                        true           // Enable NFT support
+#define CRYPTONOTE_NFT_VERSION                          1              // Current version of NFT support
+#define CRYPTONOTE_NFT_MAX_NAME_LENGTH                  256            // Maximum allowed length for NFT names
+#define CRYPTONOTE_NFT_MAX_DESCRIPTION_LENGTH           1024           // Maximum allowed length for NFT descriptions
+#define CRYPTONOTE_NFT_MAX_TOTAL_SUPPLY                 1000000
+
+
 #define FEE_PER_KB                                      ((uint64_t)2000000000) // 2 GUUS (= 2 * pow(10, 9))
 #define FEE_PER_BYTE                                    ((uint64_t)215)   // Fallback used in wallet if no fee is available from RPC
 #define FEE_PER_BYTE_V12                                ((uint64_t)17200) // Higher fee (and fallback) in v12 (only, v13 switches back)

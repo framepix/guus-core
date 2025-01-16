@@ -36,6 +36,7 @@
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "profile_tools.h"
 #include "ringct/rctOps.h"
+#include <sqlite3.h>
 
 #include "lmdb/db_lmdb.h"
 #ifdef BERKELEY_DB
@@ -358,6 +359,30 @@ bool BlockchainDB::get_pruned_tx(const crypto::hash& h, cryptonote::transaction 
     throw DB_ERROR("Failed to parse transaction base from blob retrieved from the db");
 
   return true;
+}
+
+bool BlockchainDB::update_nft_metadata(uint64_t nft_id, const std::vector<uint8_t>& nft_blob) {
+    sqlite3_stmt* stmt;
+    const char* sql = "INSERT OR REPLACE INTO nft_data (nft_id, nft_blob) VALUES (?, ?)";
+    
+    // Prepare the SQL statement
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+
+    // Bind parameters
+    sqlite3_bind_int64(stmt, 1, nft_id);
+    sqlite3_bind_blob(stmt, 2, nft_blob.data(), nft_blob.size(), SQLITE_STATIC);
+
+    // Execute the statement
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
+
+    // Finalize the statement
+    sqlite3_finalize(stmt);
+    return true;
 }
 
 transaction BlockchainDB::get_tx(const crypto::hash& h) const

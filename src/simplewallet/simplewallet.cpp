@@ -64,6 +64,7 @@
 #include "cryptonote_core/frame_pix_voting.h"
 #include "cryptonote_core/frame_pix_list.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "cryptonote_core/cryptonote_core.h"
 #include "simplewallet.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "storages/http_abstract_invoke.h"
@@ -81,6 +82,7 @@
 #include "wallet/message_store.h"
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include "string_coding.h"
+#include "cryptonote_core/guus_nft.h"
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -2642,6 +2644,32 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("bc_height",
       boost::bind(&simple_wallet::show_blockchain_height, this, _1),
       tr("Show the blockchain height."));
+
+  m_cmd_binder.set_handler("create_nft",
+      boost::bind(&simple_wallet::create_nft, this, _1),
+        tr("create_nft <name> <description> <nft_id> <utility_data>"),
+        tr("Creates a new NFT with the specified metadata and utility."));
+
+  m_cmd_binder.set_handler("get_nft",
+      boost::bind(&simple_wallet::get_nft, this, _1),
+                   tr("get_nft <nft_id>"),
+                   tr("Retrieves the details of an NFT by its ID."));
+
+/*  m_cmd_binder.set_handler("transfer_nft",
+       boost::bind(&simple_wallet::transfer_nft, this, _1),
+           tr("transfer_nft <nft_id> <new_owner_address>"),
+           tr("Transfers the ownership of an NFT to a new address."));
+*/
+  m_cmd_binder.set_handler("list_nfts",
+       boost::bind(&simple_wallet::list_nfts, this, _1),
+           tr("list_nfts"),
+           tr("Lists all NFTs owned by the wallet."));
+
+  m_cmd_binder.set_handler("redeem_nft",
+       boost::bind(&simple_wallet::redeem_nft, this, _1),
+           tr("redeem_nft <nft_id>"),
+           tr("Redeems the utility of an NFT."));
+
   m_cmd_binder.set_handler("transfer", boost::bind(&simple_wallet::transfer, this, _1),
                            tr(USAGE_TRANSFER),
                            tr("Transfer <amount> to <address>. If the parameter \"index=<N1>[,<N2>,...]\" is specified, the wallet uses outputs received by addresses of those indices. If omitted, the wallet randomly chooses address indices to be used. In any case, it tries its best not to combine outputs across multiple addresses. <priority> is the priority of the transaction, or \"blink\" for an instant transaction. The higher the priority, the higher the transaction fee. Valid values in priority order (from lowest to highest) are: unimportant, normal, elevated, priority. If omitted, the default value (see the command \"set priority\") is used. Multiple payments can be made at once by adding <address_2> <amount_2> et cetera (before the payment ID, if it's included)"));
@@ -5948,6 +5976,142 @@ bool simple_wallet::transfer(const std::vector<std::string> &args_)
   return transfer_main(Transfer::Normal, args_, false);
 }
 //----------------------------------------------------------------------------------------------------
+bool simple_wallet::create_nft(const std::vector<std::string>& args) {
+    if (args.size() < 4) {
+        fail_msg_writer() << "Usage: create_nft <name> <description> <nft_id> <utility_data>";
+        return false;
+    }
+
+    try {
+        std::string name = args[0];
+        std::string description = args[1];
+        uint64_t nft_id;
+        std::string utility_data = args[3];
+
+        // Attempt to convert nft_id to uint64_t
+        try {
+            nft_id = std::stoull(args[2]);
+        } catch (const std::invalid_argument& e) {
+            fail_msg_writer() << "Error creating NFT: Invalid NFT ID format. Must be a number.";
+            return false;
+        } catch (const std::out_of_range& e) {
+            fail_msg_writer() << "Error creating NFT: NFT ID is out of range for unsigned long long.";
+            return false;
+        }
+
+        // Retrieve wallet address as a string using get_address_as_str
+        std::string address_str = m_wallet->get_address_as_str();
+        sqlite3* db = nullptr;  // Ensure this is properly initialized or passed
+        std::vector<uint8_t> encrypted_address(address_str.begin(), address_str.end());
+
+        uint64_t block_height = m_wallet->get_blockchain_current_height();
+
+        create_nft_with_address(db, name, description, nft_id, encrypted_address, utility_data, block_height);
+
+        success_msg_writer() << "NFT created successfully: " << name << " (ID: " << nft_id << ")";
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Error creating NFT: " << e.what();
+        return false; // Return false on any other exception
+    }
+
+    return true;
+}
+//---------------------------------------------------------------------------------
+//Retrieve NFT details
+bool simple_wallet::get_nft(const std::vector<std::string>& args) {
+    if (args.size() < 1) {
+        fail_msg_writer() << "Usage: get_nft <nft_id>";
+        return false;
+    }
+
+    try {
+        uint64_t nft_id = std::stoull(args[0]);
+
+        // Fetch NFT metadata using the wallet2 instance
+        cryptonote::nft_metadata nft = m_wallet->get_nft_metadata(nft_id);
+
+        success_msg_writer() << "NFT Details:";
+        success_msg_writer() << "Name: " << nft.nft_name;
+        success_msg_writer() << "Description: " << nft.nft_description;
+        success_msg_writer() << "ID: " << nft.nft_id;
+        success_msg_writer() << "Encrypted Address: " << tools::type_to_hex(nft.encrypted_address);
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Error retrieving NFT: " << e.what();
+        return false;
+    }
+
+    return true;
+}
+//-----------------------------------------------------------------------------
+bool simple_wallet::list_nfts(const std::vector<std::string>& args) {
+    try {
+        // Retrieve wallet address as a string
+        std::string address_str = m_wallet->get_address_as_str();
+
+        // Convert the string address to a vector of bytes
+        std::vector<uint8_t> encrypted_address(address_str.begin(), address_str.end());
+
+        if (!m_wallet) {
+            throw std::runtime_error("Wallet instance is not initialized.");
+        }
+
+        // Note: Ensure db is initialized properly
+        sqlite3* db = nullptr;  // This should be initialized or passed as an argument
+        uint64_t block_height = m_wallet->get_blockchain_current_height();
+
+        // Call the external function to list NFTs
+        std::vector<cryptonote::nft_metadata> nfts = list_nfts_by_owner(db, encrypted_address, block_height);
+
+        if (nfts.empty()) {
+            success_msg_writer() << "No NFTs found for the given address.";
+        } else {
+            success_msg_writer() << "NFTs owned by address:";
+            for (const auto& nft : nfts) {
+                success_msg_writer()
+                    << "- NFT ID: " << nft.nft_id
+                    << ", Name: " << nft.nft_name
+                    << ", Description: " << nft.nft_description;
+            }
+        }
+
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Error listing NFTs: " << e.what();
+    }
+
+    return true;
+}
+//-----------------------------------------------------------------------------
+// Command: Redeem NFT utility
+bool simple_wallet::redeem_nft(const std::vector<std::string>& args) {
+    // Ensure correct usage
+    if (args.size() != 1) {
+        fail_msg_writer() << "Usage: redeem_nft <nft_id>";
+        return false;
+    }
+
+    try {
+        // Convert the provided NFT ID to a uint64_t
+        uint64_t nft_id = std::stoull(args[0]);
+
+        // Ensure the wallet instance is initialized
+        if (!m_wallet) {
+            throw std::runtime_error("Wallet instance is not initialized.");
+        }
+         sqlite3* db = nullptr;
+        uint64_t block_height = m_wallet->get_blockchain_current_height();
+        // Redeem the NFT utility using wallet functionality
+        redeem_nft_utility(db, nft_id, block_height);
+
+        success_msg_writer() << "NFT utility redeemed successfully!";
+    } catch (const std::invalid_argument& e) {
+        fail_msg_writer() << "Invalid NFT ID provided. Please provide a valid numeric ID.";
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Error redeeming NFT utility: " << e.what();
+    }
+
+    return true;
+}
+//-----------------------------------------------------------------------------------------------------
 bool simple_wallet::locked_transfer(const std::vector<std::string> &args_)
 {
   return transfer_main(Transfer::Locked, args_, false);

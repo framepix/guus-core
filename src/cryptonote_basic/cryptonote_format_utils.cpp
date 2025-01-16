@@ -918,6 +918,61 @@ namespace cryptonote
     add_tx_extra_field_to_tx_extra(tx_extra, field);
   }
   //---------------------------------------------------------------
+  // Encrypt an address using a secret key
+  std::string encrypt_address(const std::string& address, const crypto::secret_key& secret_key) {
+    std::string encrypted;
+    encrypted.resize(address.size());
+    for (size_t i = 0; i < address.size(); ++i) {
+        encrypted[i] = address[i] ^ secret_key.data[i % sizeof(secret_key.data)];
+    }
+    return encrypted;
+   }
+  //---------------------------------------------------------
+  // Decrypt an address using a secret key
+   std::string decrypt_address(const std::string& encrypted_address, const crypto::secret_key& secret_key) {
+    std::string decrypted;
+    decrypted.resize(encrypted_address.size());
+    for (size_t i = 0; i < encrypted_address.size(); ++i) {
+        decrypted[i] = encrypted_address[i] ^ secret_key.data[i % sizeof(secret_key.data)];
+    }
+    return decrypted;
+   }
+  //---------------------------------------------------------
+  // Add encrypted addresses to tx_extra
+  bool add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, const nft_metadata& metadata) {
+    if (metadata.nft_name.empty() || metadata.nft_description.empty()) {
+        // You might want to ensure all required fields are present here
+        return false;
+    }
+
+    std::vector<uint8_t> serialized_metadata = metadata.to_bytes();
+    
+    size_t pos = tx_extra.size();
+    tx_extra.resize(pos + 1 + serialized_metadata.size());
+    tx_extra[pos] = TX_EXTRA_TAG_NFT_METADATA; // Tag for NFT metadata
+    std::copy(serialized_metadata.begin(), serialized_metadata.end(), tx_extra.begin() + pos + 1);
+
+    return true;
+   }
+  //-------------------------------------------------------------
+  // Extract encrypted address from tx_extra
+  // Extract NFT metadata from tx_extra
+  bool get_nft_metadata_from_tx_extra(const std::vector<uint8_t>& tx_extra, nft_metadata& metadata) {
+    for (size_t i = 0; i < tx_extra.size(); ++i) {
+        if (tx_extra[i] == TX_EXTRA_TAG_NFT_METADATA) {
+            // Assuming the rest of the array from i+1 is our serialized metadata
+            if (i + 1 >= tx_extra.size()) {
+                return false;  // Not enough data for metadata
+            }
+
+            std::vector<uint8_t> serialized_data(tx_extra.begin() + i + 1, tx_extra.end());
+            metadata = nft_metadata::from_bytes(serialized_data);
+            return true;
+        }
+    }
+    return false;
+  }
+  //---------------------------------------------------------------
   bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra, const std::type_info &type)
   {
     if (tx_extra.empty())

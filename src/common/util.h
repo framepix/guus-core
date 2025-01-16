@@ -56,6 +56,7 @@
  */
 namespace tools
 {
+   std::vector<uint8_t> hex_to_bytes(const std::string& hex);
   //! Functional class for closing C file handles.
   struct close_file
   {

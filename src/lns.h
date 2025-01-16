@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "cryptonote_config.h"
 
 namespace lns
 {

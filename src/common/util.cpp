@@ -116,6 +116,24 @@ static int flock_exnb(int fd)
 
 namespace tools
 {
+// Convert a hex string to a vector of uint8_t
+std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
+    if (hex.length() % 2 != 0) {
+        throw std::invalid_argument("Hex string length must be even.");
+    }
+
+    std::vector<uint8_t> bytes;
+    bytes.reserve(hex.length() / 2);
+
+    for (size_t i = 0; i < hex.length(); i += 2) {
+        std::string byte_str = hex.substr(i, 2);
+        uint8_t byte = static_cast<uint8_t>(std::stoi(byte_str, nullptr, 16));
+        bytes.push_back(byte);
+    }
+
+    return bytes;
+}
+
   std::function<void(int)> signal_handler::m_handler;
 
   private_file::private_file() noexcept : m_handle(), m_filename() {}

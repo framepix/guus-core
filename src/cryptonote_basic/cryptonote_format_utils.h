@@ -171,6 +171,11 @@ namespace cryptonote
   uint64_t get_transaction_weight(const transaction &tx);
   uint64_t get_transaction_weight(const transaction &tx, size_t blob_size);
 
+  std::string encrypt_address(const std::string& address, const crypto::secret_key& secret_key);
+  std::string decrypt_address(const std::string& encrypted_address, const crypto::secret_key& secret_key);
+  bool get_nft_metadata_from_tx_extra(const std::vector<uint8_t>& tx_extra, nft_metadata& metadata);
+  bool add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, const nft_metadata& metadata);
+
   bool check_money_overflow(const transaction& tx);
   bool check_outs_overflow(const transaction& tx);
   bool check_inputs_overflow(const transaction& tx);

@@ -40,6 +40,8 @@ add_library(cryptonote_core
   tx_pool.cpp
   tx_sanity_check.cpp
   miner.cpp
+  guus_nft.cpp
+  guus_nftdb.cpp
   cryptonote_tx_utils.cpp)
 
 target_link_libraries(cryptonote_core
