@@ -43,7 +43,12 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <random>
 #include <ctype.h>
+#include <sqlite3.h>
+#include <string>
+#include <filesystem>
+
 #include <boost/lexical_cast.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -83,6 +88,7 @@
 #include "wallet/wallet_rpc_server_commands_defs.h"
 #include "string_coding.h"
 #include "cryptonote_core/guus_nft.h"
+#include "cryptonote_core/guus_nftdb.h"
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -94,6 +100,7 @@ extern "C"
 #include <sodium.h>
 }
 
+
 #ifdef HAVE_READLINE
   #include "readline_buffer.h"
   #define PAUSE_READLINE() \
@@ -102,6 +109,8 @@ extern "C"
   #define PAUSE_READLINE()
 #endif
 
+
+namespace fs = std::filesystem;
 using namespace std;
 using namespace epee;
 using namespace cryptonote;
@@ -5977,69 +5986,126 @@ bool simple_wallet::transfer(const std::vector<std::string> &args_)
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::create_nft(const std::vector<std::string>& args) {
-    if (args.size() < 4) {
-        fail_msg_writer() << "Usage: create_nft <name> <description> <nft_id> <utility_data>";
+    if (args.size() < 3) {
+        fail_msg_writer() << "Usage: create_nft <name> <description> <utility_data>";
+        return false;
+    }
+
+    sqlite3* db = nullptr;
+    int rc;
+
+    // Construct the path to the NFT database
+    fs::path home = fs::path(getenv("HOME")); // TODO: Generalize this later
+    fs::path db_path = home / ".Bitguus" / "nft.db";
+
+    // Open database connection
+    rc = sqlite3_open(db_path.c_str(), &db);
+    if (rc) {
+        fail_msg_writer() << "Cannot open database: " << sqlite3_errmsg(db);
+        sqlite3_close(db);
         return false;
     }
 
     try {
         std::string name = args[0];
         std::string description = args[1];
-        uint64_t nft_id;
-        std::string utility_data = args[3];
-
-        // Attempt to convert nft_id to uint64_t
-        try {
-            nft_id = std::stoull(args[2]);
-        } catch (const std::invalid_argument& e) {
-            fail_msg_writer() << "Error creating NFT: Invalid NFT ID format. Must be a number.";
-            return false;
-        } catch (const std::out_of_range& e) {
-            fail_msg_writer() << "Error creating NFT: NFT ID is out of range for unsigned long long.";
-            return false;
-        }
+        std::string utility_data = args[2];
+        
+        // Generate NFT ID
+        std::random_device rd;
+        std::mt19937_64 gen(rd());
+        std::uniform_int_distribution<uint64_t> dis(1, UINT64_MAX);
+        uint64_t nft_id = dis(gen);
 
         // Retrieve wallet address as a string using get_address_as_str
         std::string address_str = m_wallet->get_address_as_str();
-        sqlite3* db = nullptr;  // Ensure this is properly initialized or passed
         std::vector<uint8_t> encrypted_address(address_str.begin(), address_str.end());
 
         uint64_t block_height = m_wallet->get_blockchain_current_height();
+
+        // Create the nft_data table if it doesn't exist
+        {
+            const char* sql = "CREATE TABLE IF NOT EXISTS nft_data (\n"
+                              "    nft_id INTEGER PRIMARY KEY,\n"
+                              "    nft_blob BLOB NOT NULL\n"
+                              ");";
+
+            char* err_msg = nullptr;
+            if (sqlite3_exec(db, sql, nullptr, nullptr, &err_msg) != SQLITE_OK) {
+                std::string error = "Failed to create table: ";
+                error += err_msg;
+                sqlite3_free(err_msg);
+                throw std::runtime_error(error);
+            }
+        }
 
         create_nft_with_address(db, name, description, nft_id, encrypted_address, utility_data, block_height);
 
         success_msg_writer() << "NFT created successfully: " << name << " (ID: " << nft_id << ")";
     } catch (const std::exception& e) {
         fail_msg_writer() << "Error creating NFT: " << e.what();
-        return false; // Return false on any other exception
+        sqlite3_close(db);
+        return false;
     }
 
+    // Close the database connection
+    sqlite3_close(db);
     return true;
 }
 //---------------------------------------------------------------------------------
-//Retrieve NFT details
+// Retrieve NFT details from the database
 bool simple_wallet::get_nft(const std::vector<std::string>& args) {
     if (args.size() < 1) {
         fail_msg_writer() << "Usage: get_nft <nft_id>";
         return false;
     }
 
+    sqlite3* db = nullptr;
+    int rc;
+
+    // Path to the NFT database
+    fs::path home = fs::path(getenv("HOME")); // TODO: Generalize later
+    fs::path db_path = home / ".Bitguus" / "nft.db";
+
+    // Open database connection
+    rc = sqlite3_open(db_path.c_str(), &db);
+    if (rc) {
+        fail_msg_writer() << "Cannot open database: " << sqlite3_errmsg(db);
+        sqlite3_close(db);
+        return false;
+    }
+
     try {
         uint64_t nft_id = std::stoull(args[0]);
 
-        // Fetch NFT metadata using the wallet2 instance
-        cryptonote::nft_metadata nft = m_wallet->get_nft_metadata(nft_id);
+        // Fetch and deserialize the NFT from the database
+        cryptonote::nft_metadata nft = load_nft_from_db(db, nft_id);
 
         success_msg_writer() << "NFT Details:";
         success_msg_writer() << "Name: " << nft.nft_name;
         success_msg_writer() << "Description: " << nft.nft_description;
         success_msg_writer() << "ID: " << nft.nft_id;
         success_msg_writer() << "Encrypted Address: " << tools::type_to_hex(nft.encrypted_address);
-    } catch (const std::exception& e) {
+    } catch (const std::invalid_argument& e) {
+        fail_msg_writer() << "Error retrieving NFT: Invalid NFT ID format.";
+        sqlite3_close(db);
+        return false;
+    } catch (const std::out_of_range& e) {
+        fail_msg_writer() << "Error retrieving NFT: NFT ID is out of range.";
+        sqlite3_close(db);
+        return false;
+    } catch (const std::runtime_error& e) {
         fail_msg_writer() << "Error retrieving NFT: " << e.what();
+        sqlite3_close(db);
+        return false;
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Unexpected error retrieving NFT: " << e.what();
+        sqlite3_close(db);
         return false;
     }
 
+    // Close the database connection
+    sqlite3_close(db);
     return true;
 }
 //-----------------------------------------------------------------------------
