@@ -7,10 +7,41 @@
 #include <string>
 #include "guus_nftdb.h"
 #include "wallet/wallet2.h"
+#include <sqlite3.h>
+#include <iostream>
+#include <stdexcept>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 // Creating an NFT
 
-void create_nft_with_address(sqlite3* db,  // Pass the database connection as an argument
+    bool NFTDatabaseHandler::init(cryptonote::Blockchain* blockchain, const cryptonote::network_type nettype, sqlite3 *nft_db) {
+        if (!nft_db) {
+            MERROR("NFTDatabaseHandler: Attempted to initialize with null database pointer");
+            return false;
+        }
+
+        try {
+               cryptonote::network_type m_nettype;
+            // Initialize the NFT database structure
+            nft_db_management::initialize_nft_database(nft_db);
+
+            // Apply any migrations that might be necessary
+            nft_db_management::apply_migrations(nft_db);
+
+            m_nettype = nettype;
+
+
+            MINFO("NFT database initialized successfully.");
+            return true;
+        } catch (const std::exception &e) {
+            MERROR("NFTDatabaseHandler: Initialization failed: " << e.what());
+            return false;
+        }
+    }
+
+void create_nft_with_address(sqlite3* db, 
                              const std::string& name,
                              const std::string& description,
                              uint64_t nft_id,
@@ -36,11 +67,13 @@ void create_nft_with_address(sqlite3* db,  // Pass the database connection as an
 
     // Persist the NFT to the database using the save function
     try {
-        save_nft_to_db(db, nft);  // Pass the database connection to the save function
+        // Ensure save_nft_to_db is updated to handle all fields including encrypted_address and block_height
+        save_nft_to_db(db, nft);
         std::cout << "Successfully created NFT: " << name << " (ID: " << nft_id
                   << ") by address (encrypted): " << tools::type_to_hex(encrypted_address) << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "Error saving NFT to database: " << e.what() << std::endl;
+        throw; // Re-throw the exception to be handled by the caller
     }
 }
 
@@ -93,33 +126,33 @@ void transfer_nft(sqlite3* db,
 }
 
 // List all NFTs owned by a specific address
-std::vector<cryptonote::nft_metadata> list_nfts_by_owner(sqlite3* db,
-                        const std::vector<uint8_t>& encrypted_address,
-                        uint64_t block_height) {
+std::vector<cryptonote::nft_metadata> list_nfts_by_owner(sqlite3* db, const std::vector<uint8_t>& encrypted_address, uint64_t block_height) {
     std::vector<cryptonote::nft_metadata> nfts;
-    try {
-        // Retrieve the NFTs owned by the given address from the database
-         nfts = get_nfts_by_address_from_db(db, encrypted_address, block_height);
 
-        // Check if no NFTs are found
-        if (nfts.empty()) {
-            std::cout << "No NFTs found for the given address." << std::endl;
-         
-        }
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT nft_blob FROM nft_data WHERE encrypted_address = ? AND block_height = ?";
 
-        // Display the NFTs owned by the address
-        std::cout << "NFTs owned by address (encrypted): " << tools::type_to_hex(encrypted_address) << std::endl;
-        for (const auto& nft : nfts) {
-            std::cout << "- NFT ID: " << nft.nft_id 
-                      << ", Name: " << nft.nft_name
-                      << ", Description: " << nft.nft_description 
-                      << std::endl;
-        }
-    } catch (const std::exception& e) {
-        // Use cerr for error messages
-        std::cerr << "Error listing NFTs by owner: " << e.what() << std::endl;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
     }
-      return nfts;
+
+    sqlite3_bind_blob(stmt, 1, encrypted_address.data(), encrypted_address.size(), SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 2, block_height);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const void* blob_data = sqlite3_column_blob(stmt, 0);
+        int blob_size = sqlite3_column_bytes(stmt, 0);
+
+        std::vector<uint8_t> blob;
+        blob.resize(blob_size);
+        std::memcpy(blob.data(), blob_data, blob_size);
+
+        cryptonote::nft_metadata nft = deserialize_nft(blob);
+        nfts.push_back(nft);
+    }
+
+    sqlite3_finalize(stmt);
+    return nfts;
 }
 
 // Redeem a utility associated with an NFT
@@ -151,3 +184,57 @@ void redeem_nft_utility(sqlite3* db,  // Pass the database connection as an argu
     }
 }
 
+
+void nft_db_management::initialize_nft_database(sqlite3* db) {
+    // SQL to create the nft_data table if it doesn't exist
+    const char* sql_create_table = R"(
+        CREATE TABLE IF NOT EXISTS nft_data (
+            nft_id INTEGER PRIMARY KEY,
+            nft_blob BLOB NOT NULL,
+            encrypted_address BLOB NOT NULL,
+            block_height INTEGER NOT NULL
+        );
+    )";
+
+    char* err_msg = nullptr;
+    if (sqlite3_exec(db, sql_create_table, nullptr, nullptr, &err_msg) != SQLITE_OK) {
+        std::string error = "Failed to create or update table: ";
+        error += err_msg;
+        sqlite3_free(err_msg);
+        throw std::runtime_error(error);
+    }
+
+    // Log that the table was created or already exists
+    MINFO("NFT data table initialized or already exists.");
+}
+
+void nft_db_management::apply_migrations(sqlite3* db) {
+    const char* sql_check_column = "PRAGMA table_info(nft_data);";
+    sqlite3_stmt* stmt;
+    if (sqlite3_prepare_v2(db, sql_check_column, -1, &stmt, nullptr) != SQLITE_OK) {
+        throw std::runtime_error("Failed to prepare statement for schema check: " + std::string(sqlite3_errmsg(db)));
+    }
+
+    bool has_utility_data = false;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "utility_data") {
+            has_utility_data = true;
+            break;
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    if (!has_utility_data) {
+        const char* sql_add_column = "ALTER TABLE nft_data ADD COLUMN utility_data TEXT;";
+        char* err_msg = nullptr;
+        if (sqlite3_exec(db, sql_add_column, nullptr, nullptr, &err_msg) != SQLITE_OK) {
+            std::string error = "Failed to add utility_data column: ";
+            error += err_msg;
+            sqlite3_free(err_msg);
+            throw std::runtime_error(error);
+        }
+        MINFO("Added utility_data column to nft_data table.");
+    }
+
+    // Add more
+}

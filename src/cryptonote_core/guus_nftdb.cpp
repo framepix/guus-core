@@ -20,13 +20,15 @@ void save_nft_to_db(sqlite3* db, const cryptonote::nft_metadata& nft) {
     std::vector<uint8_t> blob = serialize_nft(nft);
 
     sqlite3_stmt* stmt;
-    const char* sql = "INSERT OR REPLACE INTO nft_data (nft_id, nft_blob) VALUES (?, ?)";
+    const char* sql = "INSERT OR REPLACE INTO nft_data (nft_id, nft_blob, encrypted_address, block_height) VALUES (?, ?, ?, ?)";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
     }
 
     sqlite3_bind_int64(stmt, 1, nft.nft_id);
     sqlite3_bind_blob(stmt, 2, blob.data(), blob.size(), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 3, nft.encrypted_address.data(), nft.encrypted_address.size(), SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 4, nft.block_height);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);
@@ -71,7 +73,9 @@ cryptonote::nft_metadata load_nft_from_db(sqlite3* db, uint64_t nft_id) {
 void create_nft_table(sqlite3* db) {
     const char* sql = "CREATE TABLE IF NOT EXISTS nft_data (\n"
                       "    nft_id INTEGER PRIMARY KEY,\n"
-                      "    nft_blob BLOB NOT NULL\n"
+                      "    nft_blob BLOB NOT NULL,\n"
+                      "    encrypted_address BLOB NOT NULL,\n"
+                      "    block_height INTEGER NOT NULL\n"
                       ");";
 
     char* err_msg = nullptr;
@@ -88,7 +92,7 @@ cryptonote::nft_metadata get_nft_from_db(sqlite3* db, uint64_t nft_id, uint64_t 
     cryptonote::nft_metadata nft;
 
     sqlite3_stmt* stmt;
-    const char* sql = "SELECT nft_blob FROM nft_data WHERE nft_id = ? AND block_height = ?";
+    const char* sql = "SELECT nft_blob, encrypted_address FROM nft_data WHERE nft_id = ? AND block_height = ?";
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
@@ -103,11 +107,19 @@ cryptonote::nft_metadata get_nft_from_db(sqlite3* db, uint64_t nft_id, uint64_t 
         int blob_size = sqlite3_column_bytes(stmt, 0);
 
         // Copy the blob data into a std::vector
-        std::vector<unsigned char> blob(blob_size);
-        std::memcpy(blob.data(), blob_data, blob_size);  // Copy data into the vector
+        std::vector<uint8_t> blob(blob_size);
+        std::memcpy(blob.data(), blob_data, blob_size);
 
         // Deserialize the NFT using the vector
-        nft = deserialize_nft(blob);  // Pass the vector to the deserialization function
+        nft = deserialize_nft(blob);
+
+        // Retrieve and set the encrypted_address
+        const void* address_data = sqlite3_column_blob(stmt, 1);
+        int address_size = sqlite3_column_bytes(stmt, 1);
+
+        // Correct way to initialize vector from raw data
+        nft.encrypted_address = std::vector<uint8_t>(static_cast<const uint8_t*>(address_data), 
+                                                     static_cast<const uint8_t*>(address_data) + address_size);
     } else {
         sqlite3_finalize(stmt);
         throw std::runtime_error("NFT not found in the database");

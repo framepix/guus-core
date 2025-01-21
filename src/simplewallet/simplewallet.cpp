@@ -6027,7 +6027,9 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
         {
             const char* sql = "CREATE TABLE IF NOT EXISTS nft_data (\n"
                               "    nft_id INTEGER PRIMARY KEY,\n"
-                              "    nft_blob BLOB NOT NULL\n"
+                              "    nft_blob BLOB NOT NULL,\n"
+                              "    encrypted_address BLOB NOT NULL,\n"
+                              "    block_height INTEGER NOT NULL\n"
                               ");";
 
             char* err_msg = nullptr;
@@ -6110,7 +6112,21 @@ bool simple_wallet::get_nft(const std::vector<std::string>& args) {
 }
 //-----------------------------------------------------------------------------
 bool simple_wallet::list_nfts(const std::vector<std::string>& args) {
+    sqlite3* db = nullptr;
+    int rc;
+    bool result = false;
+
     try {
+        // Construct the path to the NFT database
+        fs::path home = fs::path(getenv("HOME")); // TODO: Generalize for all platform
+        fs::path db_path = home / ".Bitguus" / "nft.db";
+
+        // Open database connection
+        rc = sqlite3_open(db_path.c_str(), &db);
+        if (rc) {
+            throw std::runtime_error("Cannot open database: " + std::string(sqlite3_errmsg(db)));
+        }
+
         // Retrieve wallet address as a string
         std::string address_str = m_wallet->get_address_as_str();
 
@@ -6121,8 +6137,6 @@ bool simple_wallet::list_nfts(const std::vector<std::string>& args) {
             throw std::runtime_error("Wallet instance is not initialized.");
         }
 
-        // Note: Ensure db is initialized properly
-        sqlite3* db = nullptr;  // This should be initialized or passed as an argument
         uint64_t block_height = m_wallet->get_blockchain_current_height();
 
         // Call the external function to list NFTs
@@ -6136,15 +6150,21 @@ bool simple_wallet::list_nfts(const std::vector<std::string>& args) {
                 success_msg_writer()
                     << "- NFT ID: " << nft.nft_id
                     << ", Name: " << nft.nft_name
-                    << ", Description: " << nft.nft_description;
+                    << ", Description: " << nft.nft_description
+                    << ", Address: "  <<  tools::type_to_hex(nft.encrypted_address);
             }
         }
-
+        result = true;
     } catch (const std::exception& e) {
         fail_msg_writer() << "Error listing NFTs: " << e.what();
     }
 
-    return true;
+    // Ensure the database connection is closed even if an exception occurs
+    if (db) {
+        sqlite3_close(db);
+    }
+
+    return result;
 }
 //-----------------------------------------------------------------------------
 // Command: Redeem NFT utility

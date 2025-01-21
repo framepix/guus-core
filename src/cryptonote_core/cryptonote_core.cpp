@@ -68,7 +68,7 @@ extern "C" {
 #include "common/i18n.h"
 #include "net/local_ip.h"
 #include "cryptonote_protocol/quorumnet.h"
-
+#include "guus_nft.h"
 #include "common/guus_integration_test_hooks.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
@@ -616,6 +616,7 @@ namespace cryptonote
     uint64_t sync_threshold = 1;
 
     std::string const lns_db_file_path = m_config_folder + "/lns.db";
+    std::string const nft_db_file_path = m_config_folder + "/nft.db";
 #if !defined(GUUS_ENABLE_INTEGRATION_TEST_HOOKS) // In integration mode, don't delete the DB. This should be explicitly done in the tests. Otherwise the more likely behaviour is persisting the DB across multiple daemons in the same test.
     if (m_nettype == FAKECHAIN)
     {
@@ -628,6 +629,21 @@ namespace cryptonote
       boost::filesystem::remove(lns_db_file_path);
     }
 #endif
+
+
+   #if !defined(GUUS_ENABLE_INTEGRATION_TEST_HOOKS)
+  if (m_nettype == FAKECHAIN)
+  {
+  // reset the db by removing the database file before opening it
+   if (!db->remove_data_file(filename))
+   {
+    MERROR("Failed to remove data file in " << filename);
+    return false;
+   }
+    boost::filesystem::remove(nft_db_file_path);
+   }
+   #endif
+
 
     try
     {
@@ -788,10 +804,30 @@ namespace cryptonote
     sqlite3 *lns_db = lns::init_guus_name_system(lns_db_file_path.c_str(), db->is_read_only());
     if (!lns_db) return false;
 
+    sqlite3 *nft_db = nullptr;
+    int nft_rc;
+
+// Open NFT database connection
+    nft_rc = sqlite3_open(nft_db_file_path.c_str(), &nft_db);
+    if (nft_rc) {
+    MERROR("Cannot open NFT database: " << sqlite3_errmsg(nft_db));
+     sqlite3_close(nft_db);
+    return false;
+   }
+
+    nft_db_management::initialize_nft_database(nft_db);
+    nft_db_management::apply_migrations(nft_db);  
     const difficulty_type fixed_difficulty = command_line::get_arg(vm, arg_fixed_difficulty);
-    r = m_blockchain_storage.init(db.release(), lns_db, m_nettype, m_offline, regtest ? &regtest_test_options : test_options, fixed_difficulty, get_checkpoints);
+    r = m_blockchain_storage.init(db.release(), lns_db,nft_db, m_nettype, m_offline, regtest ? &regtest_test_options : test_options, fixed_difficulty, get_checkpoints);
     CHECK_AND_ASSERT_MES(r, false, "Failed to initialize blockchain storage");
 
+
+ /*  r = m_blockchain_storage.init(db.release(),  nft_db, m_nettype, m_offline, regtest ? &regtest_test_options : test_options, fixed_difficulty, get_checkpoints);
+    CHECK_AND_ASSERT_MES(r, false, "Failed to initialize blockchain storage with NFT");
+*/
+   if (nft_db) {
+      sqlite3_close(nft_db);
+     }
     uint64_t recalc_diff_from_block = command_line::get_arg(vm, arg_recalculate_difficulty);
     if (recalc_diff_from_block > 0)
     {

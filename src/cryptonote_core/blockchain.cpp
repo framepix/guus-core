@@ -61,6 +61,7 @@
 #include "common/pruning.h"
 #include "common/lock.h"
 #include "guus_nftdb.h"
+#include "guus_nft.h"
 
 #ifdef ENABLE_SYSTEMD
 extern "C" {
@@ -381,7 +382,7 @@ bool Blockchain::persist_nft_changes(const cryptonote::nft_metadata& nft) {
         std::vector<uint8_t> nft_blob = serialize_nft(nft);
 
         // Use BlockchainDB API to update the NFT metadata in the database
-        if (!m_db->update_nft_metadata(nft.nft_id, nft_blob)) {
+        if (!m_db->update_nft_metadata(nft.nft_id, nft_blob, nft.encrypted_address, nft.block_height)) {
             throw std::runtime_error("Failed to update NFT metadata in the database.");
         }
 
@@ -567,7 +568,7 @@ bool Blockchain::load_missing_blocks_into_guus_subsystems()
 //------------------------------------------------------------------
 //FIXME: possibly move this into the constructor, to avoid accidentally
 //       dereferencing a null BlockchainDB pointer
-bool Blockchain::init(BlockchainDB* db, sqlite3 *lns_db, const network_type nettype, bool offline, const cryptonote::test_options *test_options, difficulty_type fixed_difficulty, const GetCheckpointsCallback& get_checkpoints/* = nullptr*/)
+bool Blockchain::init(BlockchainDB* db, sqlite3 *lns_db, sqlite3 *nft_db, const network_type nettype, bool offline, const cryptonote::test_options *test_options, difficulty_type fixed_difficulty, const GetCheckpointsCallback& get_checkpoints/* = nullptr*/)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
 
@@ -745,6 +746,11 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *lns_db, const network_type nett
     return false;
   }
 
+  if (nft_db && !m_nft_db.NFTDatabaseHandler::init(this, nettype, nft_db))
+  {
+    MERROR("NFT database failed to initialise");
+    return false;
+  }
   hook_block_added(m_checkpoints);
   hook_blockchain_detached(m_checkpoints);
   for (InitHook* hook : m_init_hooks)
@@ -759,11 +765,11 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *lns_db, const network_type nett
   return true;
 }
 //------------------------------------------------------------------
-bool Blockchain::init(BlockchainDB* db, HardFork*& hf, sqlite3 *lns_db, const network_type nettype, bool offline)
+bool Blockchain::init(BlockchainDB* db, HardFork*& hf, sqlite3 *lns_db,sqlite3 *nft_db, const network_type nettype, bool offline)
 {
   if (hf != nullptr)
     m_hardfork = hf;
-  bool res = init(db, lns_db, nettype, offline, NULL);
+  bool res = init(db, lns_db, nft_db,nettype, offline, NULL);
   if (hf == nullptr)
     hf = m_hardfork;
   return res;

@@ -3,9 +3,28 @@
 
 #include <cryptonote_basic/cryptonote_basic.h>
 #include <cryptonote_core/blockchain.h>
-#include <cryptonote_core/cryptonote_core.h>
+//#include <cryptonote_core/cryptonote_core.h>
 #include <vector>
 #include <string>
+#include <sqlite3.h>
+
+class nft_db_management {
+public:
+    nft_db_management() = default;
+
+    // Initialize the NFT database with the basic structure
+    static void initialize_nft_database(sqlite3* db);
+
+    // Apply migrations to update the NFT database schema
+    static void apply_migrations(sqlite3* db);
+};
+
+class NFTDatabaseHandler {
+public:
+
+    NFTDatabaseHandler() = default;
+  bool init(cryptonote::Blockchain* blockchain, const cryptonote::network_type nettype, sqlite3 *nft_db);
+};
 
 // Create an NFT with an encrypted address
 void create_nft_with_address(sqlite3* db,

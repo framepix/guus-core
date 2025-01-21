@@ -1221,7 +1221,7 @@ public:
    */
   virtual transaction get_tx(const crypto::hash& h) const;
 
-  bool update_nft_metadata(uint64_t nft_id, const std::vector<uint8_t>& nft_blob);
+  bool update_nft_metadata(uint64_t nft_id, const std::vector<uint8_t>& nft_blob,  const std::vector<uint8_t>& encrypted_address, uint64_t block_height);
 
   /**
    * @brief fetches the transaction base with the given hash
