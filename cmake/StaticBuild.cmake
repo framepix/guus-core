@@ -5,6 +5,12 @@
 
 set(LOCAL_MIRROR "" CACHE STRING "local mirror path/URL for lib downloads")
 
+set(CAIRO_VERSION 1.17.6 CACHE STRING "cairo version")
+set(CAIRO_MIRROR ${LOCAL_MIRROR} https://gitlab.freedesktop.org/cairo/cairo/-/archive/${CAIRO_VERSION}
+    CACHE STRING "cairo download mirror(s)")
+set(CAIRO_SOURCE cairo-${CAIRO_VERSION}.tar.gz)
+set(CAIRO_HASH SHA256=a2227afc15e616657341c42af9830c937c3a6bfa63661074eabef13600e8936f CACHE STRING "cairo source hash")
+
 set(OPENSSL_VERSION 3.0.12 CACHE STRING "openssl version")
 set(OPENSSL_MIRROR ${LOCAL_MIRROR} https://www.openssl.org/source CACHE STRING "openssl download mirror(s)")
 set(OPENSSL_SOURCE openssl-${OPENSSL_VERSION}.tar.gz)
@@ -201,6 +207,18 @@ if(CMAKE_CROSSCOMPILING)
     set(openssl_system_env SYSTEM=MINGW64 RC=${CMAKE_RC_COMPILER})
   endif()
 endif()
+
+# Define the Cairo external build
+# Define the Cairo external build
+build_external(cairo
+  CONFIGURE_COMMAND ./autogen.sh ${cross_host} --prefix=${DEPS_DESTDIR} --enable-static
+    --disable-shared --enable-xlib --disable-XCB --disable-gl --enable-QUARTZ
+    "CC=${deps_cc}" "CFLAGS=-O2 ${flto}" "LDFLAGS=-lpthread"
+  INSTALL_COMMAND make install
+)
+
+add_static_target(cairo cairo_external libCairo.a)
+
 build_external(openssl
   CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env CC=${deps_cc} ${openssl_system_env} ./config
     --prefix=${DEPS_DESTDIR} --openssldir=${DEPS_DESTDIR}/etc/openssl --libdir=${DEPS_DESTDIR}/lib

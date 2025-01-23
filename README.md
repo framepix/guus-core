@@ -262,7 +262,7 @@ build the library binary manually. This can be done with the following command `
 
 Install all dependencies at once on Debian/Ubuntu:
 
-``` sudo apt update && sudo apt install build-essential cmake pkg-config libssl-dev libzmq3-dev libunbound-dev libsodium-dev libunwind8-dev liblzma-dev libreadline6-dev libldns-dev libexpat1-dev libpgm-dev qttools5-dev-tools libhidapi-dev libusb-1.0-0-dev libprotobuf-dev protobuf-compiler libudev-dev libboost-chrono-dev libboost-date-time-dev libboost-filesystem-dev libboost-locale-dev libboost-program-options-dev libboost-regex-dev libboost-serialization-dev libboost-system-dev libboost-thread-dev ccache doxygen graphviz ```
+``` sudo apt update && sudo apt install build-essential cmake pkg-config libssl-dev libzmq3-dev libunbound-dev libsodium-dev libunwind8-dev liblzma-dev libreadline6-dev libldns-dev libexpat1-dev libpgm-dev qttools5-dev-tools libhidapi-dev libusb-1.0-0-dev libprotobuf-dev protobuf-compiler libudev-dev libboost-chrono-dev libboost-date-time-dev libboost-filesystem-dev libboost-locale-dev libboost-program-options-dev libboost-regex-dev libboost-serialization-dev libboost-system-dev libboost-thread-dev ccache doxygen graphviz pthreads libpixman-1-dev  libpng-dev ```
 
 Install all dependencies at once on openSUSE:
 
@@ -278,11 +278,11 @@ FreeBSD 12.1 one-liner required to build dependencies:
 
 Clone recursively to pull-in needed submodule(s):
 
-`$ git clone --recursive https://github.com/monero-project/monero`
+`$ git clone --recursive https://github.com/framepix/guus-core`
 
 If you already have a repo cloned, initialize and update:
 
-`$ cd monero && git submodule init && git submodule update`
+`$ cd guus-core && git submodule init && git submodule update`
 
 *Note*: If there are submodule differences between branches, you may need 
 to use ```git submodule sync && git submodule update``` after changing branches
@@ -290,7 +290,7 @@ to build successfully.
 
 ### Build instructions
 
-Monero uses the CMake build system and a top-level [Makefile](Makefile) that
+Guus uses the CMake build system and a top-level [Makefile](Makefile) that
 invokes cmake commands as needed.
 
 #### On Linux and macOS
@@ -299,8 +299,11 @@ invokes cmake commands as needed.
 * Change to the root of the source code directory, change to the most recent release branch, and build:
 
     ```bash
-    cd monero
-    git checkout release-v0.17
+    cd guus-core
+    git checkout rrt
+    mkdir build
+    cd build
+    cmake ..
     make
     ```
 
@@ -315,11 +318,11 @@ invokes cmake commands as needed.
     both unstable and incompatible with release software, though testing is always
     encouraged.
 
-* The resulting executables can be found in `build/release/bin`
+* The resulting executables can be found in `build/bin`
 
-* Add `PATH="$PATH:$HOME/monero/build/release/bin"` to `.profile`
+* Add `PATH="$PATH:$HOME/guus-core/build/bin"` to `.profile`
 
-* Run Monero with `monerod --detach`
+* Run Guus with `guusd --detach`
 
 * **Optional**: build and run the test suite to verify the binaries:
 

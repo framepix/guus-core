@@ -91,6 +91,8 @@
 #include "cryptonote_core/guus_nftdb.h"
 #include <boost/program_options.hpp>
 #include "QrCode.hpp"
+#include <cairo/cairo.h>
+#include <cairo/cairo-svg.h>
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -6188,6 +6190,46 @@ bool simple_wallet::get_nft(const std::vector<std::string>& args) {
         success_msg_writer() << "Encrypted Address: " << tools::type_to_hex(nft.encrypted_address);
         success_msg_writer() << "Image Hash: " << epee::string_tools::pod_to_hex(nft.image_hash);
 
+                // Hash the SVG data for QR code generation
+        crypto::hash svg_hash = crypto::cn_fast_hash(nft.image_data.data(), nft.image_data.size());
+        std::string svg_hash_str = epee::string_tools::pod_to_hex(svg_hash);
+
+        // Generate QR Code from SVG Hash
+        const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(svg_hash_str.c_str(), qrcodegen::QrCode::Ecc::LOW);
+
+        // Print QR Code to Terminal
+#ifdef _WIN32
+#define PRINT_UTF8(pre, x) std::wcout << pre ## x
+#define WTEXTON() _setmode(_fileno(stdout), _O_WTEXT)
+#define WTEXTOFF() _setmode(_fileno(stdout), _O_TEXT)
+#else
+#define PRINT_UTF8(pre, x) std::cout << x
+#define WTEXTON()
+#define WTEXTOFF()
+#endif
+
+        WTEXTON();
+        for (int y = -2; y < qr.getSize() + 2; y += 2) {
+            for (int x = -2; x < qr.getSize() + 2; x++) {
+                if (qr.getModule(x, y) && qr.getModule(x, y + 1))
+                    PRINT_UTF8(L, "\u2588"); // Full block (█)
+                else if (qr.getModule(x, y) && !qr.getModule(x, y + 1))
+                    PRINT_UTF8(L, "\u2580"); // Upper half block (▀)
+                else if (!qr.getModule(x, y) && qr.getModule(x, y + 1))
+                    PRINT_UTF8(L, "\u2584"); // Lower half block (▄)
+                else
+                    PRINT_UTF8(L, " "); // Space
+            }
+            PRINT_UTF8(, std::endl);
+        }
+        WTEXTOFF();
+
+        // Show a snippet of the SVG for verification
+        std::string svg_content(nft.image_data.begin(), nft.image_data.end());
+        if (svg_content.size() > 100) { // Show only the first 100 characters for brevity
+            svg_content = svg_content.substr(0, 100) + "...";
+        }
+        success_msg_writer() << "SVG Snippet: " << svg_content;
     } catch (const std::invalid_argument& e) {
         fail_msg_writer() << "Error retrieving NFT: Invalid NFT ID format.";
         sqlite3_close(db);
