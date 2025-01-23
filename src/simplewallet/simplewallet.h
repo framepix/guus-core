@@ -275,7 +275,7 @@ namespace cryptonote
     bool net_stats(const std::vector<std::string>& args);
     bool welcome(const std::vector<std::string>& args);
     bool version(const std::vector<std::string>& args);
-
+    bool show_qr_code(const std::vector<std::string> &args);
     bool register_frame_pix_main(
         const std::vector<std::string>& frame_pix_key_as_str,
         const cryptonote::account_public_address& address,
