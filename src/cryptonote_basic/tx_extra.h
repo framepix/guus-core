@@ -551,98 +551,106 @@ namespace cryptonote
   };
 
 
-    struct nft_metadata
-    {
-        std::string nft_name;                  // Name of the NFT
-        std::string nft_description;           // Description of the NFT
-        uint64_t nft_id;                       // Unique identifier for the NFT
-        std::vector<uint8_t> encrypted_address; // Encrypted address of the creator
-        std::string utility_data;              // Utility data for the NFT (added)
-        uint64_t block_height;                 // Block height at which the NFT was created/modified
+struct nft_metadata
+{
+    std::string nft_name;                  // Name of the NFT
+    std::string nft_description;           // Description of the NFT
+    uint64_t nft_id;                       // Unique identifier for the NFT
+    std::vector<uint8_t> encrypted_address; // Encrypted address of the creator
+    std::string utility_data;              // Utility data for the NFT
+    std::vector<uint8_t> image_data;       // Binary data of the image for the NFT
+    crypto::hash image_hash;               // Hash of the image for verification
+    uint64_t block_height;                 // Block height at which the NFT was created/modified
 
-        // Serialize NFT metadata into a vector of bytes
-        std::vector<uint8_t> to_bytes() const {
-            std::stringstream ss;
-            ss.write(reinterpret_cast<const char*>(&nft_id), sizeof(nft_id));
-            ss.write(reinterpret_cast<const char*>(&block_height), sizeof(block_height)); // Serialize block_height
-            write_string(ss, nft_name);
-            write_string(ss, nft_description);
-            write_vector(ss, encrypted_address);
-            write_string(ss, utility_data); // Serialize utility_data
-            std::string temp = ss.str();
-            return std::vector<uint8_t>(temp.begin(), temp.end());
-        }
+    // Serialize NFT metadata into a vector of bytes
+    std::vector<uint8_t> to_bytes() const {
+        std::stringstream ss;
+        ss.write(reinterpret_cast<const char*>(&nft_id), sizeof(nft_id));
+        ss.write(reinterpret_cast<const char*>(&block_height), sizeof(block_height));
+        write_string(ss, nft_name);
+        write_string(ss, nft_description);
+        write_vector(ss, encrypted_address);
+        write_string(ss, utility_data);
+        write_vector(ss, image_data);       // Serialize image data
+        ss.write(reinterpret_cast<const char*>(&image_hash), sizeof(image_hash)); // Serialize image hash
+        std::string temp = ss.str();
+        return std::vector<uint8_t>(temp.begin(), temp.end());
+    }
 
-        // Deserialize NFT metadata from a vector of bytes
-        static nft_metadata from_bytes(const std::vector<uint8_t>& bytes) {
-            nft_metadata result;
-            std::istringstream iss(std::string(bytes.begin(), bytes.end()));
-            iss.read(reinterpret_cast<char*>(&result.nft_id), sizeof(result.nft_id));
-            iss.read(reinterpret_cast<char*>(&result.block_height), sizeof(result.block_height)); // Deserialize block_height
-            result.nft_name = read_string(iss);
-            result.nft_description = read_string(iss);
-            result.encrypted_address = read_vector<uint8_t>(iss);
-            result.utility_data = read_string(iss); // Deserialize utility_data
-            return result;
-        }
+    // Deserialize NFT metadata from a vector of bytes
+    static nft_metadata from_bytes(const std::vector<uint8_t>& bytes) {
+        nft_metadata result;
+        std::istringstream iss(std::string(bytes.begin(), bytes.end()));
+        iss.read(reinterpret_cast<char*>(&result.nft_id), sizeof(result.nft_id));
+        iss.read(reinterpret_cast<char*>(&result.block_height), sizeof(result.block_height));
+        result.nft_name = read_string(iss);
+        result.nft_description = read_string(iss);
+        result.encrypted_address = read_vector<uint8_t>(iss);
+        result.utility_data = read_string(iss);
+        result.image_data = read_vector<uint8_t>(iss); // Deserialize image data
+        iss.read(reinterpret_cast<char*>(&result.image_hash), sizeof(result.image_hash)); // Deserialize image hash
+        return result;
+    }
 
-    private:
-        static void write_string(std::ostream& os, const std::string& str) {
-            uint32_t size = static_cast<uint32_t>(str.size());
-            os.write(reinterpret_cast<const char*>(&size), sizeof(size));
-            os.write(str.data(), size);
-        }
+private:
+    static void write_string(std::ostream& os, const std::string& str) {
+        uint32_t size = static_cast<uint32_t>(str.size());
+        os.write(reinterpret_cast<const char*>(&size), sizeof(size));
+        os.write(str.data(), size);
+    }
 
-        static std::string read_string(std::istream& is) {
-            uint32_t size;
-            is.read(reinterpret_cast<char*>(&size), sizeof(size));
-            std::string str(size, '\0');
-            is.read(&str[0], size);
-            return str;
-        }
+    static std::string read_string(std::istream& is) {
+        uint32_t size;
+        is.read(reinterpret_cast<char*>(&size), sizeof(size));
+        std::string str(size, '\0');
+        is.read(&str[0], size);
+        return str;
+    }
 
-        template<typename T>
-        static void write_vector(std::ostream& os, const std::vector<T>& vec) {
-            uint32_t size = static_cast<uint32_t>(vec.size());
-            os.write(reinterpret_cast<const char*>(&size), sizeof(size));
-            os.write(reinterpret_cast<const char*>(vec.data()), size * sizeof(T));
-        }
+    template<typename T>
+    static void write_vector(std::ostream& os, const std::vector<T>& vec) {
+        uint32_t size = static_cast<uint32_t>(vec.size());
+        os.write(reinterpret_cast<const char*>(&size), sizeof(size));
+        os.write(reinterpret_cast<const char*>(vec.data()), size * sizeof(T));
+    }
 
-        template<typename T>
-        static std::vector<T> read_vector(std::istream& is) {
-            uint32_t size;
-            is.read(reinterpret_cast<char*>(&size), sizeof(size));
-            std::vector<T> vec(size);
-            is.read(reinterpret_cast<char*>(vec.data()), size * sizeof(T));
-            return vec;
-        }
-    };
+    template<typename T>
+    static std::vector<T> read_vector(std::istream& is) {
+        uint32_t size;
+        is.read(reinterpret_cast<char*>(&size), sizeof(size));
+        std::vector<T> vec(size);
+        is.read(reinterpret_cast<char*>(vec.data()), size * sizeof(T));
+        return vec;
+    }
+};
 
-    struct tx_extra_nft_metadata
-    {
-        nft_metadata metadata;
+struct tx_extra_nft_metadata
+{
+    nft_metadata metadata;
 
-        // Serialize to bytes
-        std::vector<uint8_t> to_bytes() const {
-            return metadata.to_bytes();
-        }
+    // Serialize to bytes
+    std::vector<uint8_t> to_bytes() const {
+        return metadata.to_bytes();
+    }
 
-        // Deserialize from bytes
-        static tx_extra_nft_metadata from_bytes(const std::vector<uint8_t>& bytes) {
-            tx_extra_nft_metadata result;
-            result.metadata = nft_metadata::from_bytes(bytes);
-            return result;
-        }
+    // Deserialize from bytes
+    static tx_extra_nft_metadata from_bytes(const std::vector<uint8_t>& bytes) {
+        tx_extra_nft_metadata result;
+        result.metadata = nft_metadata::from_bytes(bytes);
+        return result;
+    }
 
-        BEGIN_SERIALIZE()
-            FIELD(metadata.nft_name)
-            FIELD(metadata.nft_description)
-            FIELD(metadata.nft_id)
-            FIELD(metadata.encrypted_address)
-            FIELD(metadata.utility_data) // Add serialization for utility_data
-            FIELD(metadata.block_height) // Serialize block_height
-        END_SERIALIZE()
-    };
+    BEGIN_SERIALIZE()
+        FIELD(metadata.nft_name)
+        FIELD(metadata.nft_description)
+        FIELD(metadata.nft_id)
+        FIELD(metadata.encrypted_address)
+        FIELD(metadata.utility_data)
+        FIELD(metadata.image_data) // Serialize image data
+        FIELD(metadata.image_hash) // Serialize image hash
+        FIELD(metadata.block_height)
+    END_SERIALIZE()
+};
 
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;

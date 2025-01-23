@@ -33,6 +33,8 @@ void create_nft_with_address(sqlite3* db,
                              uint64_t nft_id,
                              const std::vector<uint8_t>& encrypted_address,
                              const std::string& utility_data,
+                             const std::vector<uint8_t>& image_data,
+                             const crypto::hash& image_hash,
                              uint64_t block_height);
 
 // Retrieve NFT details by ID

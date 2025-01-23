@@ -48,13 +48,13 @@
 #include <sqlite3.h>
 #include <string>
 #include <filesystem>
-
 #include <boost/lexical_cast.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 #include <boost/regex.hpp>
 #include <boost/range/adaptor/transformed.hpp>
+#include <boost/filesystem.hpp>
 #include <lokimq/hex.h>
 #include <lokimq/string_view.h>
 #include "include_base_utils.h"
@@ -89,6 +89,7 @@
 #include "string_coding.h"
 #include "cryptonote_core/guus_nft.h"
 #include "cryptonote_core/guus_nftdb.h"
+#include <boost/program_options.hpp>
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -110,7 +111,8 @@ extern "C"
 #endif
 
 
-namespace fs = std::filesystem;
+namespace fs = boost::filesystem;
+namespace po = boost::program_options;
 using namespace std;
 using namespace epee;
 using namespace cryptonote;
@@ -5985,21 +5987,33 @@ bool simple_wallet::transfer(const std::vector<std::string> &args_)
   return transfer_main(Transfer::Normal, args_, false);
 }
 //----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::create_nft(const std::vector<std::string>& args) {
-    if (args.size() < 3) {
-        fail_msg_writer() << "Usage: create_nft <name> <description> <utility_data>";
+    if (args.size() < 4) {
+        fail_msg_writer() << "Usage: create_nft <name> <description> <utility_data> <svg_filename>";
         return false;
     }
+
+    std::string name = args[0];
+    std::string description;
+    for (size_t i = 1; i < args.size() - 2; ++i) {
+      description += args[i] + " ";
+    }
+    description = description.substr(0, description.size() - 1); // Trim trailing space
+    std::string utility_data = args[args.size() - 2];
+    std::string svg_filename = args[args.size() - 1]; // Expecting only the filename without path
+
+    // Use .Bitguus as the directory for both SVG files and database
+    fs::path home(getenv("HOME")); 
+    fs::path db_path = home / ".Bitguus" / "nft.db";
+    fs::path svg_dir = home / ".Bitguus"; // Directory for SVG files
+    fs::path svg_path = svg_dir / svg_filename; // Construct path to SVG file
 
     sqlite3* db = nullptr;
     int rc;
 
-    // Construct the path to the NFT database
-    fs::path home = fs::path(getenv("HOME")); // TODO: Generalize this later
-    fs::path db_path = home / ".Bitguus" / "nft.db";
-
     // Open database connection
-    rc = sqlite3_open(db_path.c_str(), &db);
+    rc = sqlite3_open(db_path.string().c_str(), &db);
     if (rc) {
         fail_msg_writer() << "Cannot open database: " << sqlite3_errmsg(db);
         sqlite3_close(db);
@@ -6007,10 +6021,25 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
     }
 
     try {
-        std::string name = args[0];
-        std::string description = args[1];
-        std::string utility_data = args[2];
-        
+        // Check if the file exists in the .Bitguus directory
+        if (!fs::exists(svg_path)) {
+            throw std::runtime_error("SVG file '" + svg_filename + "' does not exist in ~/.Bitguus/.");
+        }
+
+        // Load the SVG data from file
+        std::vector<uint8_t> svg_data;
+        std::ifstream file(svg_path.string(), std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            throw std::runtime_error("Unable to open SVG file: " + svg_filename + " in ~/.Bitguus/");
+        }
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        svg_data.resize(size);
+        if (!file.read(reinterpret_cast<char*>(svg_data.data()), size)) {
+            throw std::runtime_error("Error reading SVG file");
+        }
+        file.close();
+
         // Generate NFT ID
         std::random_device rd;
         std::mt19937_64 gen(rd());
@@ -6023,13 +6052,15 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
 
         uint64_t block_height = m_wallet->get_blockchain_current_height();
 
-        // Create the nft_data table if it doesn't exist
+        // Create or ensure the nft_data table exists with the image_data column
         {
             const char* sql = "CREATE TABLE IF NOT EXISTS nft_data (\n"
                               "    nft_id INTEGER PRIMARY KEY,\n"
                               "    nft_blob BLOB NOT NULL,\n"
                               "    encrypted_address BLOB NOT NULL,\n"
-                              "    block_height INTEGER NOT NULL\n"
+                              "    block_height INTEGER NOT NULL,\n"
+                              "    image_data BLOB,\n"
+                              "    image_hash BLOB\n"
                               ");";
 
             char* err_msg = nullptr;
@@ -6041,9 +6072,14 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
             }
         }
 
-        create_nft_with_address(db, name, description, nft_id, encrypted_address, utility_data, block_height);
+        // Compute hash of the SVG content
+        crypto::hash image_hash = crypto::cn_fast_hash(svg_data.data(), svg_data.size());
+
+        // Create NFT with SVG data and hash
+        create_nft_with_address(db, name, description, nft_id, encrypted_address, utility_data, svg_data, image_hash, block_height);
 
         success_msg_writer() << "NFT created successfully: " << name << " (ID: " << nft_id << ")";
+        success_msg_writer() << "Image Hash: " << epee::string_tools::pod_to_hex(image_hash);
     } catch (const std::exception& e) {
         fail_msg_writer() << "Error creating NFT: " << e.what();
         sqlite3_close(db);

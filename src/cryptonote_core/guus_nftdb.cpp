@@ -20,7 +20,7 @@ void save_nft_to_db(sqlite3* db, const cryptonote::nft_metadata& nft) {
     std::vector<uint8_t> blob = serialize_nft(nft);
 
     sqlite3_stmt* stmt;
-    const char* sql = "INSERT OR REPLACE INTO nft_data (nft_id, nft_blob, encrypted_address, block_height) VALUES (?, ?, ?, ?)";
+    const char* sql = "INSERT OR REPLACE INTO nft_data (nft_id, nft_blob, encrypted_address, block_height, image_data, image_hash) VALUES (?, ?, ?, ?, ?, ?)";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
     }
@@ -29,6 +29,8 @@ void save_nft_to_db(sqlite3* db, const cryptonote::nft_metadata& nft) {
     sqlite3_bind_blob(stmt, 2, blob.data(), blob.size(), SQLITE_STATIC);
     sqlite3_bind_blob(stmt, 3, nft.encrypted_address.data(), nft.encrypted_address.size(), SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 4, nft.block_height);
+    sqlite3_bind_blob(stmt, 5, nft.image_data.data(), nft.image_data.size(), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 6, &nft.image_hash, sizeof(nft.image_hash), SQLITE_STATIC);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);
@@ -75,7 +77,9 @@ void create_nft_table(sqlite3* db) {
                       "    nft_id INTEGER PRIMARY KEY,\n"
                       "    nft_blob BLOB NOT NULL,\n"
                       "    encrypted_address BLOB NOT NULL,\n"
-                      "    block_height INTEGER NOT NULL\n"
+                      "    block_height INTEGER NOT NULL,\n"
+                      "    image_data BLOB,\n"
+                      "    image_hash BLOB\n"
                       ");";
 
     char* err_msg = nullptr;
@@ -92,7 +96,7 @@ cryptonote::nft_metadata get_nft_from_db(sqlite3* db, uint64_t nft_id, uint64_t 
     cryptonote::nft_metadata nft;
 
     sqlite3_stmt* stmt;
-    const char* sql = "SELECT nft_blob, encrypted_address FROM nft_data WHERE nft_id = ? AND block_height = ?";
+    const char* sql = "SELECT nft_blob, encrypted_address, image_data, image_hash FROM nft_data WHERE nft_id = ? AND block_height = ?";
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
@@ -116,10 +120,18 @@ cryptonote::nft_metadata get_nft_from_db(sqlite3* db, uint64_t nft_id, uint64_t 
         // Retrieve and set the encrypted_address
         const void* address_data = sqlite3_column_blob(stmt, 1);
         int address_size = sqlite3_column_bytes(stmt, 1);
-
-        // Correct way to initialize vector from raw data
         nft.encrypted_address = std::vector<uint8_t>(static_cast<const uint8_t*>(address_data), 
                                                      static_cast<const uint8_t*>(address_data) + address_size);
+
+        // Retrieve and set the image_data
+        const void* image_data = sqlite3_column_blob(stmt, 2);
+        int image_size = sqlite3_column_bytes(stmt, 2);
+        nft.image_data = std::vector<uint8_t>(static_cast<const uint8_t*>(image_data), 
+                                              static_cast<const uint8_t*>(image_data) + image_size);
+
+        // Retrieve and set the image_hash
+        const void* hash_data = sqlite3_column_blob(stmt, 3);
+        std::memcpy(&nft.image_hash, hash_data, sizeof(nft.image_hash));
     } else {
         sqlite3_finalize(stmt);
         throw std::runtime_error("NFT not found in the database");
@@ -134,15 +146,17 @@ void update_nft_in_db(sqlite3* db, const cryptonote::nft_metadata& nft) {
     std::vector<uint8_t> blob = serialize_nft(nft);  // Serialize the updated NFT metadata
 
     sqlite3_stmt* stmt;
-    const char* sql = "UPDATE nft_data SET nft_blob = ? WHERE nft_id = ? AND block_height = ?";  // Use block height to ensure the correct NFT
+    const char* sql = "UPDATE nft_data SET nft_blob = ?, image_data = ?, image_hash = ? WHERE nft_id = ? AND block_height = ?";  // Use block height to ensure the correct NFT
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
     }
 
     sqlite3_bind_blob(stmt, 1, blob.data(), blob.size(), SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 2, nft.nft_id);
-    sqlite3_bind_int64(stmt, 3, nft.block_height);  // Ensure we're updating the correct entry by block height
+    sqlite3_bind_blob(stmt, 2, nft.image_data.data(), nft.image_data.size(), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 3, &nft.image_hash, sizeof(nft.image_hash), SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 4, nft.nft_id);
+    sqlite3_bind_int64(stmt, 5, nft.block_height);  // Ensure we're updating the correct entry by block height
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         sqlite3_finalize(stmt);
@@ -159,7 +173,7 @@ std::vector<cryptonote::nft_metadata> get_nfts_by_address_from_db(sqlite3* db,
     std::vector<cryptonote::nft_metadata> nfts;
 
     sqlite3_stmt* stmt;
-    const char* sql = "SELECT nft_blob FROM nft_data WHERE encrypted_address = ? AND block_height = ?";
+    const char* sql = "SELECT nft_blob, image_data, image_hash FROM nft_data WHERE encrypted_address = ? AND block_height = ?";
 
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
         throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
@@ -179,6 +193,17 @@ std::vector<cryptonote::nft_metadata> get_nfts_by_address_from_db(sqlite3* db,
 
         // Deserialize the NFT from the vector
         cryptonote::nft_metadata nft = deserialize_nft(blob);
+
+        // Retrieve and set the image_data
+        const void* image_data = sqlite3_column_blob(stmt, 1);
+        int image_size = sqlite3_column_bytes(stmt, 1);
+        nft.image_data = std::vector<uint8_t>(static_cast<const uint8_t*>(image_data), 
+                                              static_cast<const uint8_t*>(image_data) + image_size);
+
+        // Retrieve and set the image_hash
+        const void* hash_data = sqlite3_column_blob(stmt, 2);
+        std::memcpy(&nft.image_hash, hash_data, sizeof(nft.image_hash));
+
         nfts.push_back(nft);
     }
 

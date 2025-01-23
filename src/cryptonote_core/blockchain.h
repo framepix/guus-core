@@ -81,10 +81,14 @@ struct nft_metadata {
     std::string nft_description;
     uint64_t nft_id;
     std::vector<uint8_t> encrypted_address;
+    std::string utility_data;
+    std::vector<uint8_t> image_data;
+    crypto::hash image_hash;
+    uint64_t block_height;
 
     template <typename Archive>
     void serialize(Archive& ar, const unsigned int /* version */) {
-        ar & nft_name & nft_description & nft_id & encrypted_address;
+        ar & nft_name & nft_description & nft_id & encrypted_address & utility_data & image_data & image_hash & block_height;
     }
 };
 namespace cryptonote

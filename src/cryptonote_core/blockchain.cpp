@@ -350,19 +350,23 @@ cryptonote::nft_metadata Blockchain::get_nft_by_id(uint64_t nft_id) const {
   }
 
  //---------------------------------------------------------------
-  void Blockchain::get_nft_details(uint64_t nft_id) const {
+void Blockchain::get_nft_details(uint64_t nft_id) const {
     for (const auto& nft : m_nft_list) {
         if (nft.nft_id == nft_id) {
             std::cout << "NFT Details:\n"
                       << "Name: " << nft.nft_name << "\n"
                       << "Description: " << nft.nft_description << "\n"
                       << "ID: " << nft.nft_id << "\n"
-                      << "Creator Address (Encrypted): " << tools::type_to_hex(nft.encrypted_address) << std::endl;
+                      << "Creator Address (Encrypted): " << tools::type_to_hex(nft.encrypted_address) << "\n"
+                      << "Utility Data: " << nft.utility_data << "\n"
+                      << "Image Size: " << nft.image_data.size() << " bytes\n"
+                      << "Image Hash: " << epee::string_tools::pod_to_hex(nft.image_hash) << "\n"
+                      << "Block Height: " << nft.block_height << std::endl;
             return;
         }
     }
     throw std::runtime_error("NFT not found!");
-  }
+}
 //------------------------------------------------------------------
 bool Blockchain::persist_nft_changes(const cryptonote::nft_metadata& nft) {
     try {
@@ -382,8 +386,8 @@ bool Blockchain::persist_nft_changes(const cryptonote::nft_metadata& nft) {
         std::vector<uint8_t> nft_blob = serialize_nft(nft);
 
         // Use BlockchainDB API to update the NFT metadata in the database
-        if (!m_db->update_nft_metadata(nft.nft_id, nft_blob, nft.encrypted_address, nft.block_height)) {
-            throw std::runtime_error("Failed to update NFT metadata in the database.");
+        if (!m_db->update_nft_metadata(nft.nft_id, nft_blob, nft.encrypted_address, nft.image_data, nft.image_hash, nft.block_height)) {
+        throw std::runtime_error("Failed to update NFT metadata in the database.");
         }
 
         // Log success

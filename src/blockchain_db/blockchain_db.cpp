@@ -361,11 +361,14 @@ bool BlockchainDB::get_pruned_tx(const crypto::hash& h, cryptonote::transaction 
   return true;
 }
 
-bool BlockchainDB::update_nft_metadata(uint64_t nft_id, const std::vector<uint8_t>& nft_blob, 
-                                       const std::vector<uint8_t>& encrypted_address, uint64_t block_height) {
+bool BlockchainDB::update_nft_metadata(uint64_t nft_id, const std::vector<uint8_t>& nft_blob,
+                                       const std::vector<uint8_t>& encrypted_address, 
+                                       const std::vector<uint8_t>& image_data,
+                                       const crypto::hash& image_hash,
+                                       uint64_t block_height) {
     sqlite3_stmt* stmt;
-    // Update SQL to include encrypted_address and block_height
-    const char* sql = "INSERT OR REPLACE INTO nft_data (nft_id, nft_blob, encrypted_address, block_height) VALUES (?, ?, ?, ?)";
+    // Update SQL to include encrypted_address, image_data, image_hash, and block_height
+    const char* sql = "INSERT OR REPLACE INTO nft_data (nft_id, nft_blob, encrypted_address, image_data, image_hash, block_height) VALUES (?, ?, ?, ?, ?, ?)";
 
     // Prepare the SQL statement
     if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
@@ -376,7 +379,9 @@ bool BlockchainDB::update_nft_metadata(uint64_t nft_id, const std::vector<uint8_
     sqlite3_bind_int64(stmt, 1, nft_id);
     sqlite3_bind_blob(stmt, 2, nft_blob.data(), nft_blob.size(), SQLITE_STATIC);
     sqlite3_bind_blob(stmt, 3, encrypted_address.data(), encrypted_address.size(), SQLITE_STATIC);
-    sqlite3_bind_int64(stmt, 4, block_height);
+    sqlite3_bind_blob(stmt, 4, image_data.data(), image_data.size(), SQLITE_STATIC);
+    sqlite3_bind_blob(stmt, 5, &image_hash, sizeof(image_hash), SQLITE_STATIC);
+    sqlite3_bind_int64(stmt, 6, block_height);
 
     // Execute the statement
     if (sqlite3_step(stmt) != SQLITE_DONE) {
