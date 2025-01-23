@@ -6124,6 +6124,8 @@ bool simple_wallet::get_nft(const std::vector<std::string>& args) {
         success_msg_writer() << "Description: " << nft.nft_description;
         success_msg_writer() << "ID: " << nft.nft_id;
         success_msg_writer() << "Encrypted Address: " << tools::type_to_hex(nft.encrypted_address);
+        success_msg_writer() << "Image Hash: " << epee::string_tools::pod_to_hex(nft.image_hash);
+
     } catch (const std::invalid_argument& e) {
         fail_msg_writer() << "Error retrieving NFT: Invalid NFT ID format.";
         sqlite3_close(db);
