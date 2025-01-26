@@ -117,32 +117,42 @@ void transfer_nft(sqlite3* db, uint64_t nft_id, const std::vector<uint8_t>& new_
 // List all NFTs owned by a specific address
 std::vector<cryptonote::nft_metadata> list_nfts_by_owner(sqlite3* db, const std::vector<uint8_t>& encrypted_address, uint64_t block_height) {
     std::vector<cryptonote::nft_metadata> nfts;
+    sqlite3_stmt* stmt = nullptr;
+    
+    // Prepare the query (example query)
+    const char* sql = "SELECT nft_id, nft_name, nft_description, block_height, encrypted_address FROM nft_data WHERE encrypted_address = ? AND block_height <= ?";
 
-    sqlite3_stmt* stmt;
-    const char* sql = "SELECT nft_blob FROM nft_data WHERE encrypted_address = ? AND block_height = ?";
-
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-        throw std::runtime_error("Failed to prepare statement: " + std::string(sqlite3_errmsg(db)));
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+        return nfts;
     }
 
+    // Bind parameters
     sqlite3_bind_blob(stmt, 1, encrypted_address.data(), encrypted_address.size(), SQLITE_STATIC);
     sqlite3_bind_int64(stmt, 2, block_height);
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const void* blob_data = sqlite3_column_blob(stmt, 0);
-        int blob_size = sqlite3_column_bytes(stmt, 0);
-
-        std::vector<uint8_t> blob;
-        blob.resize(blob_size);
-        std::memcpy(blob.data(), blob_data, blob_size);
-
-        cryptonote::nft_metadata nft = deserialize_nft(blob);
+    // Execute the query and collect results
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        cryptonote::nft_metadata nft;
+        nft.nft_id = sqlite3_column_int64(stmt, 0);
+        nft.nft_name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        nft.nft_description = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        nft.block_height = sqlite3_column_int64(stmt, 3);  // Fetch block height
+        const uint8_t* encrypted_addr_data = reinterpret_cast<const uint8_t*>(sqlite3_column_blob(stmt, 4));
+        nft.encrypted_address = std::vector<uint8_t>(encrypted_addr_data, encrypted_addr_data + sqlite3_column_bytes(stmt, 4));
+        
         nfts.push_back(nft);
+    }
+
+    if (rc != SQLITE_DONE) {
+        std::cerr << "SQLite error during query execution: " << sqlite3_errmsg(db) << std::endl;
     }
 
     sqlite3_finalize(stmt);
     return nfts;
 }
+
 
 // Redeem a utility associated with an NFT
 void redeem_nft_utility(sqlite3* db, uint64_t nft_id, uint64_t block_height) {
@@ -169,11 +179,13 @@ void nft_db_management::initialize_nft_database(sqlite3* db) {
     const char* sql_create_table = R"(
         CREATE TABLE IF NOT EXISTS nft_data (
             nft_id INTEGER PRIMARY KEY,
+            nft_name TEXT NOT NULL,          -- Column for NFT name
+            nft_description TEXT,           -- Optional column for NFT description
             nft_blob BLOB NOT NULL,
             encrypted_address BLOB NOT NULL,
             block_height INTEGER NOT NULL,
-            image_data BLOB,   -- Column for storing image data
-            image_hash BLOB    -- Column for storing image hash
+            image_data BLOB,                -- Column for storing image data
+            image_hash BLOB                 -- Column for storing image hash
         );
     )";
 
@@ -187,6 +199,7 @@ void nft_db_management::initialize_nft_database(sqlite3* db) {
 
     MINFO("NFT data table initialized or already exists.");
 }
+
 
 void nft_db_management::apply_migrations(sqlite3* db) {
     const char* sql_check_column = "PRAGMA table_info(nft_data);";

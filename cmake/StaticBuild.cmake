@@ -5,6 +5,12 @@
 
 set(LOCAL_MIRROR "" CACHE STRING "local mirror path/URL for lib downloads")
 
+set(PIXMAN_VERSION 0.34.0 CACHE STRING "pixman version")
+set(PIXMAN_MIRROR ${LOCAL_MIRROR} https://gitlab.freedesktop.org/pixman/pixman/-/archive/pixman-${PIXMAN_VERSION}
+    CACHE STRING "pixman download mirror(s)")
+set(PIXMAN_SOURCE pixman-pixman-${PIXMAN_VERSION}.tar.gz)
+set(PIXMAN_HASH SHA256=c01942bdb41b88def10f0c46b9bfbd05c016e3432e81752ad2fd398e99845e5d CACHE STRING "pixman source hash")
+
 set(CAIRO_VERSION 1.17.6 CACHE STRING "cairo version")
 set(CAIRO_MIRROR ${LOCAL_MIRROR} https://gitlab.freedesktop.org/cairo/cairo/-/archive/${CAIRO_VERSION}
     CACHE STRING "cairo download mirror(s)")
@@ -208,16 +214,22 @@ if(CMAKE_CROSSCOMPILING)
   endif()
 endif()
 
-# Define the Cairo external build
-# Define the Cairo external build
-build_external(cairo
-  CONFIGURE_COMMAND ./autogen.sh ${cross_host} --prefix=${DEPS_DESTDIR} --enable-static
-    --disable-shared --enable-xlib --disable-XCB --disable-gl --enable-QUARTZ
-    "CC=${deps_cc}" "CFLAGS=-O2 ${flto}" "LDFLAGS=-lpthread"
+
+build_external(pixman
+  CONFIGURE_COMMAND ./autogen.sh && ./configure ${cross_host} --prefix=${DEPS_DESTDIR} --enable-static --disable-shared
+    "CC=${deps_cc}" "CFLAGS=-O2 ${flto}" "LDFLAGS=-lm"
   INSTALL_COMMAND make install
 )
+add_static_target(pixman pixman_external libpixman-1.a)
 
-add_static_target(cairo cairo_external libCairo.a)
+# Define the Cairo external build
+build_external(cairo
+  CONFIGURE_COMMAND ./autogen.sh && ./configure ${cross_host} --prefix=${DEPS_DESTDIR} --enable-static
+        --disable-shared --enable-PIXMAN --disable-GL --enable-XLIB --enable-XCB --enable-xlib-XCB  --enable-SVG --enable-PNG --enable-FT
+    "CC=${deps_cc}" "CFLAGS=-O2 ${flto}"  "LDFLAGS=-lpthread -lX11-xcb -lxcb-render -lxcb-shm -lxcb -lpng -lfreetype"
+  INSTALL_COMMAND make install
+)
+add_static_target(cairo cairo_external  libcairo.a libcairo-trace.a)
 
 build_external(openssl
   CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env CC=${deps_cc} ${openssl_system_env} ./config

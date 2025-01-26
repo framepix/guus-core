@@ -517,6 +517,11 @@ if (WITH_SYSTEMD AND NOT BUILD_STATIC_DEPS)
     endif()
 endif()
 
+include_directories(${PNG_INCLUDE_DIRS})
+include_directories(${FREETYPE_INCLUDE_DIRS})
+target_include_directories(
+cairo PUBLIC ${Cairo_INCLUDE_DIRS})
+target_link_libraries(cairo PUBLIC ${Cairo_LIBRARIES})
 
 add_subdirectory(external)
 

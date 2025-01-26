@@ -28,6 +28,7 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 guus_add_executable(simplewallet "guus-wallet-cli"
+  png_resize.cpp
   simplewallet.cpp
   )
 target_link_libraries(simplewallet
@@ -39,6 +40,10 @@ target_link_libraries(simplewallet
     mnemonics
     epee_readline
     qrcodegen
+    cairo
+    pixman
+    png
+    freetype
     Boost::chrono
     Boost::program_options
     Boost::filesystem
