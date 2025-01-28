@@ -51,6 +51,8 @@
 #include "cryptonote_basic/cryptonote_stat_info.h"
 #include "warnings.h"
 #include "crypto/hash.h"
+#include "nft/nft_db.h"
+
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)
 
@@ -320,6 +322,8 @@ namespace cryptonote
       * @return whether or not the block is too big
       */
      bool check_incoming_block_size(const blobdata& block_blob) const;
+     
+     std::unique_ptr<NFTDB> m_nft_db;
 
      /// Called (from frame_pix_quorum_cop) to tell quorumnet that it need to refresh its list of
      /// active SNs.

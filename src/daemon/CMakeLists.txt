@@ -39,6 +39,7 @@ target_link_libraries(daemon
   PRIVATE
     rpc
     blockchain_db
+    nft_db
     cryptonote_core
     p2p
     cryptonote_protocol

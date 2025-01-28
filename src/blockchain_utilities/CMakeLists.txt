@@ -31,6 +31,7 @@ add_library(blockchain_tools_common_libs INTERFACE)
 target_link_libraries(blockchain_tools_common_libs INTERFACE
     cryptonote_core
     blockchain_db
+    nft_db
     version
     Boost::filesystem
     Boost::program_options
