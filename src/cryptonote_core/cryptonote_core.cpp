@@ -616,15 +616,6 @@ namespace cryptonote
     bool sync_on_blocks = true;
     uint64_t sync_threshold = 1;
 
-    m_nft_db = std::make_unique<NFTDB>(m_config_folder);
-    if (!m_nft_db->init())
-    {
-        LOG_ERROR("Failed to initialize NFT database");
-        return false;
-    }
-    LOG_PRINT_L0("NFT database successfully initialized at " << 
-        boost::filesystem::absolute(m_config_folder + "/nft.db").string());
-
     std::string const lns_db_file_path = m_config_folder + "/lns.db";
 #if !defined(GUUS_ENABLE_INTEGRATION_TEST_HOOKS) // In integration mode, don't delete the DB. This should be explicitly done in the tests. Otherwise the more likely behaviour is persisting the DB across multiple daemons in the same test.
     if (m_nettype == FAKECHAIN)
@@ -638,6 +629,15 @@ namespace cryptonote
       boost::filesystem::remove(lns_db_file_path);
     }
 #endif
+
+    m_nft_db = std::make_unique<NFTDB>(m_config_folder);
+    if (!m_nft_db->init())
+    {
+        LOG_ERROR("Failed to initialize NFT database");
+        return false;
+    }
+    LOG_PRINT_L0("NFT database successfully initialized at " <<
+        boost::filesystem::absolute(m_config_folder + "/nft.db").string());
 
     try
     {
