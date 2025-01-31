@@ -528,6 +528,10 @@ void toJsonValue(rapidjson::Document& doc, const cryptonote::tx_out& txout, rapi
     {
       INSERT_INTO_JSON_OBJECT(val, doc, to_scripthash, output);
     }
+    void operator()(const cryptonote::txout_nft& output) const
+    {
+      INSERT_INTO_JSON_OBJECT(val, doc, to_nft, output);
+    }
   };
   boost::apply_visitor(add_output{doc, val}, txout.target);
 }
@@ -566,6 +570,13 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::tx_out& txout)
     else if (elem.name == "to_scripthash")
     {
       cryptonote::txout_to_scripthash tmpVal;
+      fromJsonValue(elem.value, tmpVal);
+      txout.target = std::move(tmpVal);
+    }
+    // Add NFT deserialization
+    else if (elem.name == "to_nft")
+    {
+      cryptonote::txout_nft tmpVal;
       fromJsonValue(elem.value, tmpVal);
       txout.target = std::move(tmpVal);
     }
@@ -706,6 +717,35 @@ void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::output_key_and
 
   INSERT_INTO_JSON_OBJECT(val, doc, amount_index, out.amount_index);
   INSERT_INTO_JSON_OBJECT(val, doc, key, out.key);
+}
+
+// Add these new serialization functions for txout_nft
+void toJsonValue(rapidjson::Document& doc, const cryptonote::txout_nft& txout, rapidjson::Value& val)
+{
+  val.SetObject();
+  INSERT_INTO_JSON_OBJECT(val, doc, nft_id, txout.nft_id);
+  INSERT_INTO_JSON_OBJECT(val, doc, owner, txout.owner);
+  
+  // Convert metadata bytes to hex string using span
+  const epee::span<const uint8_t> metadata_span(txout.metadata.data(), txout.metadata.size());
+  const std::string metadata_hex = epee::to_hex::string(metadata_span);
+  INSERT_INTO_JSON_OBJECT(val, doc, metadata, metadata_hex);
+
+}
+
+void fromJsonValue(const rapidjson::Value& val, cryptonote::txout_nft& txout)
+{
+  if (!val.IsObject()) {
+    throw cryptonote::json::WRONG_TYPE("json object");
+  }
+
+  GET_FROM_JSON_OBJECT(val, txout.nft_id, nft_id);
+  GET_FROM_JSON_OBJECT(val, txout.owner, owner);
+
+  // Convert hex string back to bytes
+  std::string metadata_hex;
+  GET_FROM_JSON_OBJECT(val, metadata_hex, metadata);
+  txout.metadata = epee::from_hex::vector(metadata_hex);
 }
 
 

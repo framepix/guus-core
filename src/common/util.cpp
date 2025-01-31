@@ -91,6 +91,8 @@ using namespace epee;
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "util"
 
+namespace fs = boost::filesystem;
+
 namespace
 {
 
@@ -598,29 +600,46 @@ std::string get_nix_version_display_string()
   }
 #endif
   
-  std::string get_default_data_dir()
-  {
-    /* Please for the love of god refactor  the ifdefs out of this */
 
-    // namespace fs = boost::filesystem;
-    // Windows < Vista: C:\Documents and Settings\Username\Application Data\CRYPTONOTE_NAME
-    // Windows >= Vista: C:\Users\Username\AppData\Roaming\CRYPTONOTE_NAME
-    // Unix & Mac: ~/.CRYPTONOTE_NAME
-    std::string config_folder;
+ std::string get_default_data_dir() {
+  fs::path pathRet;
+  
+  #ifdef WIN32
+    // Windows path handling
+    wchar_t* wszPath = NULL;
+    if (SHGetKnownFolderPath(FOLDERID_RoamingAppData, KF_FLAG_CREATE, NULL, &wszPath) != S_OK) {
+      throw std::runtime_error("Failed to get AppData folder");
+    }
+    pathRet = fs::path(wszPath);
+    CoTaskMemFree(wszPath);
+    pathRet /= CRYPTONOTE_NAME;
+  #else
+    // UNIX path handling
+    const char* pszHome = std::getenv("HOME");
+    if (!pszHome || strlen(pszHome) == 0) {
+      throw std::runtime_error("$HOME environment variable not set");
+    }
+    pathRet = fs::path(pszHome);
+    pathRet /= ("." + std::string(CRYPTONOTE_NAME));
+  #endif
 
-#ifdef WIN32
-    config_folder = get_special_folder_path(CSIDL_COMMON_APPDATA, true) + "\\" + CRYPTONOTE_NAME;
-#else
-    std::string pathRet;
-    char* pszHome = getenv("HOME");
-    if (pszHome == NULL || strlen(pszHome) == 0)
-      pathRet = "/";
-    else
-      pathRet = pszHome;
-    config_folder = (pathRet + "/." + CRYPTONOTE_NAME);
-#endif
+  // Universal sanitization
+  pathRet = pathRet.lexically_normal();
+  pathRet.make_preferred();
 
-    return config_folder;
+  // Validate path components
+  if (pathRet.empty() || !pathRet.has_root_path()) {
+    throw std::runtime_error("Generated invalid data directory path");
+  }
+
+  // Create directory if needed
+  boost::system::error_code ec;
+  fs::create_directories(pathRet, ec);
+  if (ec) {
+    throw std::runtime_error("Failed to create data directory: " + ec.message());
+  }
+
+  return pathRet.string();
   }
 
   bool create_directories_if_necessary(const std::string& path)

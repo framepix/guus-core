@@ -44,6 +44,7 @@
 #include "cryptonote_basic/verification_context.h"
 #include "cryptonote_core/frame_pix_voting.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "cryptonote_core/nft_db.h"
 
 using namespace epee;
 
@@ -263,7 +264,7 @@ namespace cryptonote
     get_transaction_prefix_hash(tx, tx_prefix_hash);
     return true;
   }
-  //---------------------------------------------------------------
+  //--------------------------------------------------------------
   bool is_v1_tx(const blobdata_ref& tx_blob)
   {
     uint64_t version;
@@ -676,7 +677,7 @@ namespace cryptonote
     return get_additional_tx_pub_keys_from_extra(tx.extra);
   }
   //---------------------------------------------------------------
-  static bool add_tx_extra_field_to_tx_extra(std::vector<uint8_t>& tx_extra, tx_extra_field &field)
+   static bool add_tx_extra_field_to_tx_extra(std::vector<uint8_t>& tx_extra, tx_extra_field &field) 
   {
     std::ostringstream oss;
     binary_archive<true> ar(oss);
@@ -690,6 +691,17 @@ namespace cryptonote
 
     return true;
   }
+  //---------------------------------------------------------------
+bool add_tx_extra_nft(std::vector<uint8_t>& tx_extra,  tx_extra_nft& nft_extra) {
+    std::ostringstream oss;
+    binary_archive<true> ar(oss);
+    
+    if (!::do_serialize(ar, nft_extra)) return false;
+    
+    const std::string& str = oss.str();
+    tx_extra.insert(tx_extra.end(), str.begin(), str.end());
+    return true;
+}
   //---------------------------------------------------------------
   bool add_additional_tx_pub_keys_to_extra(std::vector<uint8_t>& tx_extra, const std::vector<crypto::public_key>& additional_pub_keys)
   {

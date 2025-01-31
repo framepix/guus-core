@@ -51,7 +51,8 @@
 #include "cryptonote_basic/cryptonote_stat_info.h"
 #include "warnings.h"
 #include "crypto/hash.h"
-#include "nft/nft_db.h"
+#include "nft_db.h"
+#include "wallet/wallet2.h"
 
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)
@@ -111,7 +112,9 @@ namespace cryptonote
    class core: public i_miner_handler
    {
    public:
-
+      //bool validate_nft_metadata(const cryptonote::nft_metadata& metadata);
+      bool check_nft_ownership(const transaction& tx, NFTDB& nft_db);
+      const std::string m_data_dir;
       /**
        * @brief constructor
        *
@@ -981,7 +984,7 @@ namespace cryptonote
      std::mutex              m_long_poll_mutex;
      std::condition_variable m_long_poll_wake_up_clients;
  private:
-
+    std::shared_ptr<tools::wallet2> m_wallet;  // Store wallet instance
      /**
       * @copydoc Blockchain::add_new_block
       *

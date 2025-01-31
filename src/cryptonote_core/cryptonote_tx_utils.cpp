@@ -35,21 +35,36 @@
 using namespace epee;
 
 #include "common/apply_permutation.h"
+#include "common/util.h"
 #include "cryptonote_tx_utils.h"
 #include "cryptonote_config.h"
 #include "blockchain.h"
 #include "cryptonote_core/miner.h"
+#include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/tx_extra.h"
+#include "nft_db.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "ringct/rctSigs.h"
 #include "multisig/multisig.h"
 #include "int-util.h"
+#include "memwipe.h"
+#include "ringct/rctTypes.h"
 
 using namespace crypto;
 
 namespace cryptonote
 {
+
+    // Helper to serialize/deserialize NFT metadata in tx extra
+    #pragma pack(push, 1)
+    struct nft_extra_metadata
+    {
+        nft_metadata meta;
+        crypto::signature signature;
+    };
+    #pragma pack(pop)
+
   //---------------------------------------------------------------
   static void classify_addresses(const std::vector<tx_destination_entry> &destinations, const boost::optional<cryptonote::tx_destination_entry>& change_addr, size_t &num_stdaddresses, size_t &num_subaddresses, account_public_address &single_dest_subaddress)
   {
@@ -968,7 +983,230 @@ namespace cryptonote
 
      return construct_tx_and_get_tx_key(sender_account_keys, subaddresses, sources, destinations_copy, change_addr, extra, tx, unlock_time, tx_key, additional_tx_keys, rct_config, NULL, tx_params);
   }
+
+  //-------------------------------------------------------------
+  bool parse_tx_extra_nft(const std::vector<uint8_t>& tx_extra, tx_extra_nft& nft_info)
+  {
+    std::vector<tx_extra_field> fields;
+    if (!parse_tx_extra(tx_extra, fields)) return false;
+
+    auto it = std::find_if(fields.begin(), fields.end(),
+        [](const tx_extra_field& f) { return boost::get<tx_extra_nft>(&f) != nullptr; });
+
+    if (it == fields.end()) return false;
+
+     nft_info = boost::get<tx_extra_nft>(*it);
+     return true;
+    }
+  //----------------------------------------------------------------
+    bool add_nft_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_nft& nft)
+    {
+        tx_extra_field field = nft;
+        return append_tx_extra_to_extra(tx_extra, field);
+    }
   //---------------------------------------------------------------
+  bool validate_nft_tx(const transaction& tx, const crypto::hash& tx_hash, NFTDB& nftdb)
+  {
+    std::vector<nft_extra_metadata> nft_extras;
+    std::vector<uint64_t> nft_ids_in_tx;
+
+    std::vector<cryptonote::tx_extra_field> tx_extra_fields;
+    
+    // Parse tx extra into structured fields
+    if (!cryptonote::parse_tx_extra(tx.extra, tx_extra_fields)) {
+        return false;  // Failed to parse tx_extra
+    }
+
+    for (const auto& field : tx_extra_fields)
+    {
+        if (const auto* extra_nft = boost::get<cryptonote::tx_extra_nft>(&field))
+        {
+            nft_extra_metadata metadata;
+            metadata.meta = extra_nft->metadata;
+            metadata.signature = extra_nft->signature;
+            nft_extras.push_back(metadata);
+        }
+    }
+
+    // Validate NFT outputs
+    for (size_t i = 0; i < tx.vout.size(); ++i)
+    {
+        if (tx.vout[i].target.type() != typeid(txout_nft))
+            continue;
+
+        const auto& nft_out = boost::get<txout_nft>(tx.vout[i].target);
+
+        // Ensure matching metadata exists
+        if (i >= nft_extras.size())
+            return false;
+
+        const auto& meta = nft_extras[i].meta;
+        const auto& sig = nft_extras[i].signature;
+
+        // Check uniqueness
+        if (std::find(nft_ids_in_tx.begin(), nft_ids_in_tx.end(), meta.nft_id) != nft_ids_in_tx.end())
+            return false;
+        nft_ids_in_tx.push_back(meta.nft_id);
+
+        // Ensure NFT is not already in DB
+        nft_info existing;
+        if (nftdb.get_nft_by_id(meta.nft_id, existing))
+            return false;
+
+        // Verify image hash
+        crypto::hash computed_hash;
+        crypto::cn_fast_hash(meta.image_data.data(), meta.image_data.size(), computed_hash);
+        if (computed_hash != meta.image_hash)
+            return false;
+
+        // Check required fields
+        if (meta.nft_id == 0 || meta.nft_name.empty() || meta.version == 0)
+            return false;
+
+        // Verify signature
+        if (!crypto::check_signature(tx_hash, nft_out.owner, sig))
+            return false;
+    }
+
+    return true;
+   }
+   //-------------------------------------------------------------------------------
+    nft_decrypt_result decrypt_owner_key(
+    const crypto::public_key& encrypted_address,
+    const crypto::secret_key& private_view_key,
+    const crypto::public_key& sender_public_key,
+    crypto::public_key& owner_key) noexcept 
+    {
+    // Validate inputs
+    if (!crypto::check_key(encrypted_address) || 
+        !crypto::check_key(sender_public_key) ||
+        private_view_key == crypto::null_skey) {  // Replacing invalid check_secret_key
+        return nft_decrypt_result::invalid_input;
+    }
+
+    // Generate key derivation
+    crypto::key_derivation derivation;
+    if (!crypto::generate_key_derivation(sender_public_key, private_view_key, derivation)) {
+        return nft_decrypt_result::derivation_failed;
+    }
+
+    // Generate ChaCha key using Monero's standard method
+    crypto::chacha_key chacha_key;
+    crypto::generate_chacha_key(derivation.data, sizeof(derivation), chacha_key, 1);  // Added kdf_rounds = 1
+
+    // Create IV from first 8 bytes of encrypted address
+    crypto::chacha_iv iv = {};
+    memcpy(iv.data, encrypted_address.data, sizeof(iv.data));
+
+    // Decrypt using Monero's optimized implementation
+    crypto::public_key decrypted_key;
+    crypto::chacha20(
+        encrypted_address.data,
+        sizeof(crypto::public_key),
+        chacha_key,
+        iv,
+        decrypted_key.data
+    );
+
+    // Validate decrypted key
+    if (!crypto::check_key(decrypted_key)) {
+        return nft_decrypt_result::decryption_failed;
+    }
+
+    owner_key = decrypted_key;
+    return nft_decrypt_result::success;
+    }
+   //-------------------------------------------------------------------------------
+   nft_owner_result get_tx_owner_key(const transaction& tx,
+                                  const crypto::secret_key& private_view_key,
+                                  crypto::public_key& owner_key) noexcept
+   {
+    if (tx.vin.empty()) {
+        return nft_owner_result::invalid_metadata;
+    }
+
+    const tx_extra_nft* nft_extra = tx.get_nft_metadata();
+    if (!nft_extra) {
+        return nft_owner_result::no_metadata;
+    }
+
+    // Validate and extract the encrypted address
+    if (nft_extra->metadata.encrypted_address.size() != sizeof(crypto::public_key)) {
+        return nft_owner_result::invalid_metadata;
+    }
+
+    crypto::public_key encrypted_address;
+    memcpy(encrypted_address.data, nft_extra->metadata.encrypted_address.data(), sizeof(crypto::public_key));
+
+    // Retrieve sender's public key from tx_extra
+    crypto::public_key sender_pubkey;
+    if (!get_tx_pub_key_from_extra(tx, sender_pubkey)) {
+        return nft_owner_result::invalid_metadata;
+    }
+
+    // Decrypt the owner's public key
+    const auto result = decrypt_owner_key(encrypted_address, private_view_key, sender_pubkey, owner_key);
+    if (result != nft_decrypt_result::success || !crypto::check_key(owner_key)) {
+        return nft_owner_result::decryption_failed;
+    }
+
+    return nft_owner_result::success;
+   }
+  //------------------------------------------------------------------
+   bool get_metadata_hash(const nft_metadata& meta, crypto::hash& hash)
+   {
+    try {
+        std::ostringstream oss;
+        binary_archive<true> ar(oss);
+        ::serialization::serialize(ar, const_cast<nft_metadata&>(meta));
+        
+        // Hash using CN fast hash (same as tx hashing)
+        crypto::cn_fast_hash(oss.str().data(), oss.str().size(), hash);
+        return true;
+    }
+    catch (const std::exception& e) {
+        LOG_ERROR("Failed to hash NFT metadata: " << e.what());
+        return false;
+    }
+   }
+  //---------------------------------------------------------------------------------
+  bool construct_tx_with_nft(const account_keys& sender_keys,
+                          const nft_metadata& nft_data,
+                          transaction& tx,
+                          const crypto::public_key& owner)
+  {
+    // Create NFT output
+    txout_nft nft_output;
+    nft_output.nft_id = nft_data.nft_id;
+    nft_output.owner = owner;
+
+    tx_out output;
+    output.amount = 0;
+    output.target = nft_output;
+    tx.vout.push_back(output);
+
+    // Prepare metadata for extra
+    nft_extra_metadata extra_data;
+    extra_data.meta = nft_data;
+    
+    // Generate signature
+    crypto::hash tx_hash = get_transaction_hash(tx);
+    crypto::generate_signature(tx_hash, 
+                          owner,
+                          sender_keys.m_spend_secret_key,
+                          extra_data.signature);
+    // Add to tx extra
+    tx_extra_nft extra_field;
+    extra_field.metadata = extra_data.meta;
+    extra_field.signature = extra_data.signature;
+    if (!add_tx_extra_nft(tx.extra, extra_field)) {
+    LOG_ERROR("Failed to add NFT extra data");
+    return false;
+    }
+
+    return true;
+   }
+//--------------------------------------------------------------------------------------
   bool generate_genesis_block(
       block& bl
     , std::string const & genesis_tx

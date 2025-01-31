@@ -37,6 +37,7 @@
 #include <boost/variant.hpp>
 #include "lns.h"
 #include "cryptonote_basic.h"
+#include "cryptonote_core/nft_db.h"
 
 
 #define TX_EXTRA_PADDING_MAX_COUNT              255
@@ -58,7 +59,7 @@
 #define TX_EXTRA_TAG_FRAME_PIX_STATE_CHANGE  0x78
 #define TX_EXTRA_TAG_BURN                       0x79
 #define TX_EXTRA_TAG_GUUS_NAME_SYSTEM           0x7A
-
+#define TX_EXTRA_TAG_TX_NFT                     0x80
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG       0xDE
 
 #define TX_EXTRA_NONCE_PAYMENT_ID               0x00
@@ -548,6 +549,10 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+   // bool get_tx_owner_key(const transaction& tx, crypto::public_key& key);
+    bool get_metadata_hash(const nft_metadata& meta, crypto::hash& hash);
+    bool parse_tx_extra_nft(const std::vector<uint8_t>& tx_extra, tx_extra_nft& nft_info);
+    bool add_nft_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_nft& nft);
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;
   //   varint size;
@@ -568,7 +573,8 @@ namespace cryptonote
                          tx_extra_tx_key_image_proofs,
                          tx_extra_tx_key_image_unlock,
                          tx_extra_burn,
-                         tx_extra_guus_name_system
+                         tx_extra_guus_name_system,
+                         tx_extra_nft
                         > tx_extra_field;
 }
 
@@ -592,3 +598,4 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_proofs,         TX
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_tx_key_image_unlock,         TX_EXTRA_TAG_TX_KEY_IMAGE_UNLOCK);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_burn,                        TX_EXTRA_TAG_BURN);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_guus_name_system,            TX_EXTRA_TAG_GUUS_NAME_SYSTEM);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_nft,                         TX_EXTRA_TAG_TX_NFT);

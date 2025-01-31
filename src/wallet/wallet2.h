@@ -331,6 +331,8 @@ private:
     friend class wallet_device_callback;
   public:
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
+    //bool get_private_view_key(epee::mlocked<crypto::secret_key>& private_view_key) const;
+   //bool get_private_view_key(crypto::secret_key &key);
     enum RefreshType {
       RefreshFull,
       RefreshOptimizeCoinbase,

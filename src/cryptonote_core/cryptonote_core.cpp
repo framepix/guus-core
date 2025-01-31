@@ -61,7 +61,7 @@ extern "C" {
 #include "checkpoints/checkpoints.h"
 #include "ringct/rctTypes.h"
 #include "blockchain_db/blockchain_db.h"
-#include "nft/nft_db.h"
+#include "nft_db.h"
 #include "ringct/rctSigs.h"
 #include "common/notify.h"
 #include "version.h"
@@ -69,8 +69,11 @@ extern "C" {
 #include "common/i18n.h"
 #include "net/local_ip.h"
 #include "cryptonote_protocol/quorumnet.h"
+#include "blockchain.h"
 
 #include "common/guus_integration_test_hooks.h"
+
+#include "nft_utils.h"
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "cn"
@@ -259,7 +262,7 @@ namespace cryptonote
     return false;
   }
   bool init_core_callback_complete = init_core_callback_stubs();
-
+  std::string data_dir = tools::get_default_data_dir();
   //-----------------------------------------------------------------------------------------------
   core::core(i_cryptonote_protocol* pprotocol):
               m_mempool(m_blockchain_storage),
@@ -277,7 +280,8 @@ namespace cryptonote
               m_update_available(false),
               m_last_storage_server_ping(0),
               m_last_guusnet_ping(0),
-              m_pad_transactions(false)
+              m_pad_transactions(false),
+              m_wallet(0)
   {
     m_checkpoints_updating.clear();
     set_cryptonote_protocol(pprotocol);
@@ -1205,7 +1209,7 @@ namespace cryptonote
 
     return tx_info;
   }
-
+  //--------------------------------------------------------------------------------
   bool core::handle_parsed_txs(std::vector<tx_verification_batch_info> &parsed_txs, const tx_pool_options &opts,
       uint64_t *blink_rollback_height)
   {
@@ -1224,6 +1228,34 @@ namespace cryptonote
         ok = false; // Propagate failures (so this can be chained with parse_incoming_txs without an intermediate check)
         continue;
       }
+              // NFT-Specific Validation Start
+        if (info.tx.is_nft_transaction()) {
+            // Validate NFT metadata format
+            const auto* nft_extra = info.tx.get_nft_metadata();
+               Blockchain blockchain_instance(m_mempool, m_frame_pix_list);
+               if (!nft_extra || !blockchain_instance.validate_nft_metadata(nft_extra->metadata)) {
+                info.tvc.m_invalid_nft_metadata = true;
+                info.result = false;
+                ok = false;
+                continue;
+            }
+
+            // Check NFT ownership
+            if (!check_nft_ownership(info.tx, m_blockchain_storage.get_nftdb())) {
+                info.tvc.m_invalid_nft_ownership = true;
+                info.result = false;
+                ok = false;
+                continue;
+            }
+        }
+        // NFT-Specific Validation End
+
+        if (opts.kept_by_block)
+            get_blockchain_storage().on_new_tx_from_block(info.tx);
+        if (info.already_have)
+            continue;
+
+
       if (opts.kept_by_block)
         get_blockchain_storage().on_new_tx_from_block(info.tx);
       if (info.already_have)
@@ -1257,22 +1289,177 @@ namespace cryptonote
     return ok;
   }
   //-----------------------------------------------------------------------------------------------
-  std::vector<core::tx_verification_batch_info> core::handle_incoming_txs(const std::vector<blobdata>& tx_blobs, const tx_pool_options &opts)
+  std::vector<core::tx_verification_batch_info> core::handle_incoming_txs(
+    const std::vector<blobdata>& tx_blobs,
+    const tx_pool_options &opts)
   {
     auto lock = incoming_tx_lock();
     auto parsed = parse_incoming_txs(tx_blobs, opts);
+
+    // Get NFTDB reference once for thread safety
+    auto& nft_db = m_blockchain_storage.get_nftdb();
+    auto& blockchain_instance = m_blockchain_storage;  // Use existing blockchain storage
+
+    for(auto& tx_info : parsed) {
+        if(!tx_info.result) continue; // Skip already failed txs
+
+        const transaction& tx = tx_info.tx;
+        if(tx.is_nft_transaction()) {
+            try {
+                const auto* nft_extra = tx.get_nft_metadata();
+                if(!nft_extra || !blockchain_instance.validate_nft_metadata(nft_extra->metadata)) {
+                    tx_info.tvc.m_verifivation_failed = true;
+                    tx_info.tvc.m_invalid_nft_metadata = true;
+                    tx_info.result = false;
+                    LOG_PRINT_L1("Invalid NFT metadata in tx " << get_transaction_hash(tx));
+                    continue;
+                }
+
+                nft_info existing_nft;
+                const uint64_t nft_id = nft_extra->metadata.nft_id;
+
+                if(nft_db.get_nft_by_id(nft_id, existing_nft)) {
+                    if(existing_nft.spent) {
+                        tx_info.tvc.m_double_spend = true;
+                        tx_info.result = false;
+                        LOG_PRINT_L1("NFT " << nft_id << " already spent");
+                        continue;
+                    }
+                }
+
+                if (!m_wallet) {
+                    LOG_PRINT_L1("Wallet is not initialized");
+                    continue;
+                }
+
+                crypto::secret_key private_view_key = m_wallet->get_account().get_keys().m_view_secret_key;
+
+                // Fetch NFT metadata
+                if (!nft_extra) {
+                    LOG_PRINT_L1("Failed to retrieve NFT metadata from tx");
+                    continue;
+                }
+
+                crypto::public_key tx_owner;
+                crypto::hash metadata_hash;
+
+                // Validate NFT ownership
+                if (get_tx_owner_key(tx, private_view_key, tx_owner) != nft_owner_result::success ||
+                    !get_metadata_hash(nft_extra->metadata, metadata_hash) ||
+                    !crypto::check_signature(metadata_hash, tx_owner, nft_extra->signature))
+                {
+                    tx_info.tvc.m_verifivation_failed = true;
+                    tx_info.tvc.m_invalid_nft_ownership = true;
+                    tx_info.result = false;
+                    LOG_PRINT_L1("NFT ownership verification failed for " << nft_extra->metadata.nft_id);
+                    continue;
+                }
+
+                if(nft_extra->metadata.block_height > m_blockchain_storage.get_current_blockchain_height()) {
+                    tx_info.tvc.m_verifivation_failed = true;
+                    tx_info.tvc.m_invalid_nft_state = true;
+                    tx_info.result = false;
+                    LOG_PRINT_L1("NFT references future block height");
+                    continue;
+                }
+
+            } catch(const std::exception& e) {
+                tx_info.tvc.m_verifivation_failed = true;
+                tx_info.tvc.m_invalid_nft_state = true;
+                tx_info.result = false;
+                LOG_ERROR("NFT validation error: " << e.what());
+            }
+        }
+    }
     handle_parsed_txs(parsed, opts);
     return parsed;
-  }
+   }
   //-----------------------------------------------------------------------------------------------
   bool core::handle_incoming_tx(const blobdata& tx_blob, tx_verification_context& tvc, const tx_pool_options &opts)
   {
     const std::vector<cryptonote::blobdata> tx_blobs{{tx_blob}};
     auto parsed = handle_incoming_txs(tx_blobs, opts);
-    parsed[0].blob = &tx_blob; // Update pointer to the input rather than the copy in case the caller wants to use it for some reason
+
+    if (!parsed[0].result) {
+        tvc = parsed[0].tvc;
+        return false;
+    }
+
+    const transaction& tx = parsed[0].tx;
+    if (tx.is_nft_transaction()) {
+        const auto* nft_extra = tx.get_nft_metadata();
+        if (!nft_extra) {
+            tvc.m_verifivation_failed = true;
+            tvc.m_invalid_nft_metadata = true;  // Add specific error flag
+            parsed[0].result = false;
+            LOG_PRINT_L1("NFT transaction missing required extra data");
+        } else {
+            try {
+                // Validate NFT metadata structure
+                auto& blockchain_instance = m_blockchain_storage;  // Use existing blockchain storage
+                if (!blockchain_instance.validate_nft_metadata(nft_extra->metadata)) {
+                    tvc.m_verifivation_failed = true;
+                    tvc.m_invalid_nft_metadata = true;
+                    parsed[0].result = false;
+                    LOG_PRINT_L1("Invalid NFT metadata");
+                }
+                // Check NFT ID validity
+                if (nft_extra->metadata.nft_id == 0) {
+                    tvc.m_verifivation_failed = true;
+                    tvc.m_invalid_nft_metadata = true;
+                    parsed[0].result = false;
+                    LOG_PRINT_L1("Invalid NFT ID (0)");
+                }
+
+                // Check spent status
+                if (m_blockchain_storage.get_nftdb().is_nft_spent(nft_extra->metadata.nft_id)) {
+                    tvc.m_double_spend = true;
+                    parsed[0].result = false;
+                    LOG_PRINT_L1("NFT " << nft_extra->metadata.nft_id << " already spent");
+                }
+
+                // Get private view key from wallet
+                if (!m_wallet) {
+                    tvc.m_verifivation_failed = true;
+                    tvc.m_invalid_nft_ownership = true;
+                    parsed[0].result = false;
+                    LOG_PRINT_L1("Wallet is not initialized");
+                }
+
+                // Correct method to fetch private view key
+                crypto::secret_key private_view_key = m_wallet->get_account().get_keys().m_view_secret_key;
+                crypto::public_key owner_key;
+                crypto::hash metadata_hash;
+
+                // Decrypt owner key properly
+                if (get_tx_owner_key(tx, private_view_key, owner_key) != nft_owner_result::success) {
+                    tvc.m_verifivation_failed = true;
+                    tvc.m_invalid_nft_ownership = true;
+                    parsed[0].result = false;
+                    LOG_PRINT_L1("Failed to decrypt owner key");
+                }
+                // Verify signature
+                else if (!get_metadata_hash(nft_extra->metadata, metadata_hash) ||
+                         !crypto::check_signature(metadata_hash, owner_key, nft_extra->signature))
+                {
+                    tvc.m_verifivation_failed = true;
+                    tvc.m_invalid_signature = true;
+                    parsed[0].result = false;
+                    LOG_PRINT_L1("Invalid NFT signature");
+                }
+            }
+            catch (const std::exception& e) {
+                tvc.m_verifivation_failed = true;
+                parsed[0].result = false;
+                LOG_ERROR("NFT validation error: " << e.what());
+            }
+        }
+    }
+
+    parsed[0].blob = &tx_blob;
     tvc = parsed[0].tvc;
     return parsed[0].result && (parsed[0].already_have || tvc.m_added_to_pool);
-  }
+   }
   //-----------------------------------------------------------------------------------------------
   std::pair<std::vector<std::shared_ptr<blink_tx>>, std::unordered_set<crypto::hash>>
   core::parse_incoming_blinks(const std::vector<serializable_blink_metadata> &blinks)
@@ -1435,7 +1622,46 @@ namespace cryptonote
     }
     return quorumnet_send_blink(m_quorumnet_obj, tx_blob);
   }
-  //-----------------------------------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------------
+   bool core::check_nft_ownership(const transaction& tx, NFTDB& nft_db) {
+    const auto& nft_id = tx.get_nft_id();
+    nft_info info;
+
+    if (!nft_db.get_nft_by_id(nft_id, info)) {
+        MERROR("NFT not found in database: " << epee::string_tools::pod_to_hex(nft_id));
+        return false;
+    }
+
+    // Ensure signatures exist
+    if (tx.signatures.empty()) {
+        MERROR("No signatures provided in transaction");
+        return false;
+    }
+
+    // Verify each signature
+    for (const auto& sig_set : tx.signatures) {
+        if (sig_set.empty()) {
+            MERROR("Empty signature set found in transaction");
+            return false;
+        }
+
+        for (const auto& signature : sig_set) {
+            if (!crypto::check_signature(tx.hash, info.owner, signature)) {
+                MERROR("Invalid NFT ownership signature");
+                return false;
+            }
+        }
+    }
+
+    // Check spending status
+    if (info.spent) {
+        MERROR("NFT already spent: " << nft_id);
+        return false;
+    }
+
+     return true;
+   }
+   //------------------------------------------------------------------------------------------------------
   bool core::get_stat_info(core_stat_info& st_inf) const
   {
     st_inf.mining_speed = m_miner.get_speed();

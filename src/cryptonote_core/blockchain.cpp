@@ -49,6 +49,7 @@
 #include "int-util.h"
 #include "common/threadpool.h"
 #include "common/boost_serialization_helper.h"
+#include "common/util.h"
 #include "warnings.h"
 #include "crypto/hash.h"
 #include "cryptonote_core.h"
@@ -73,7 +74,7 @@ extern "C" {
 #define FIND_BLOCKCHAIN_SUPPLEMENT_MAX_SIZE (100*1024*1024) // 100 MB
 
 using namespace crypto;
-
+namespace fs = boost::filesystem;
 //#include "serialization/json_archive.h"
 
 /* TODO:
@@ -107,6 +108,7 @@ Blockchain::block_extended_info::block_extended_info(const alt_block_data_t &src
 
 //------------------------------------------------------------------
 Blockchain::Blockchain(tx_memory_pool& tx_pool, frame_pixs::frame_pix_list& frame_pix_list):
+  m_data_dir(tools::get_default_data_dir()),
   m_db(), m_tx_pool(tx_pool), m_hardfork(NULL), m_timestamps_and_difficulties_height(0), m_current_block_cumul_weight_limit(0), m_current_block_cumul_weight_median(0),
   m_max_prepare_blocks_threads(4), m_db_sync_on_blocks(true), m_db_sync_threshold(1), m_db_sync_mode(db_async), m_db_default_sync(false), m_fast_sync(true), m_show_time_stats(false), m_sync_counter(0), m_bytes_to_sync(0), m_cancel(false),
   m_long_term_block_weights_window(CRYPTONOTE_LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE),
@@ -404,7 +406,7 @@ bool Blockchain::load_missing_blocks_into_guus_subsystems()
 //------------------------------------------------------------------
 //FIXME: possibly move this into the constructor, to avoid accidentally
 //       dereferencing a null BlockchainDB pointer
-bool Blockchain::init(BlockchainDB* db, sqlite3 *lns_db, const network_type nettype, bool offline, const cryptonote::test_options *test_options, difficulty_type fixed_difficulty, const GetCheckpointsCallback& get_checkpoints/* = nullptr*/)
+bool Blockchain::init(BlockchainDB* db, sqlite3 *lns_db,  const network_type nettype, bool offline, const cryptonote::test_options *test_options, difficulty_type fixed_difficulty, const GetCheckpointsCallback& get_checkpoints/* = nullptr*/)
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
 
@@ -593,10 +595,42 @@ bool Blockchain::init(BlockchainDB* db, sqlite3 *lns_db, const network_type nett
     return false;
   }
 
+    fs::path data_dir_path(m_data_dir);
+    try {
+        data_dir_path = fs::absolute(data_dir_path);
+        data_dir_path = data_dir_path.lexically_normal();
+        data_dir_path.make_preferred();
+        
+        if (!fs::exists(data_dir_path)) {
+            if (!fs::create_directories(data_dir_path)) {
+                LOG_ERROR("Failed to create data directory: " << data_dir_path.string());
+                return false;
+            }
+        }
+    } catch (const fs::filesystem_error& e) {
+        LOG_ERROR("Filesystem error: " << e.what());
+        return false;
+    }
+
+    // Initialize NFT database with full path
+    fs::path nft_db_path = data_dir_path / "nft.db";
+    try {
+        m_nftdb.reset(new NFTDB(nft_db_path.string()));
+        if (!m_nftdb->init()) {
+            LOG_ERROR("Failed to initialize NFT database at " << nft_db_path.string());
+            return false;
+        }
+        LOG_PRINT_L1("NFT database initialized at: " << nft_db_path.string());
+    } catch (const std::exception& e) {
+        LOG_ERROR("NFTDB initialization failed: " << e.what());
+        return false;
+    }
+
+
   return true;
 }
 //------------------------------------------------------------------
-bool Blockchain::init(BlockchainDB* db, HardFork*& hf, sqlite3 *lns_db, const network_type nettype, bool offline)
+bool Blockchain::init(BlockchainDB* db, HardFork*& hf, sqlite3 *lns_db,  const network_type nettype, bool offline)
 {
   if (hf != nullptr)
     m_hardfork = hf;
@@ -674,51 +708,163 @@ bool Blockchain::deinit()
   return true;
 }
 //------------------------------------------------------------------
+    bool Blockchain::validate_nft_metadata(const nft_metadata& metadata) const {
+        if (metadata.nft_id == 0) return false;
+        if (metadata.image_data.empty()) return false;
+        return true;
+    }
+//-------------------------------------------------------------------
+// NFT data loading implementation
+bool Blockchain::load_nft_data(const transaction& tx, uint64_t height)
+{
+    std::vector<cryptonote::tx_extra_nft> nft_extras;
+    crypto::hash tx_hash = cryptonote::get_transaction_hash(tx);
+
+    try {
+        // Parse transaction extra for NFT metadata
+        std::vector<tx_extra_field> tx_extra_fields;
+        if (!parse_tx_extra(tx.extra, tx_extra_fields)) {
+            LOG_ERROR("Failed to parse tx extra for tx " << tx_hash);
+            return false;
+        }
+
+        // Extract all NFT-related extra fields
+        for (const auto& field : tx_extra_fields) {
+            if (typeid(tx_extra_nft) == field.type()) {
+                nft_extras.push_back(boost::get<tx_extra_nft>(field));
+            }
+        }
+
+        // Process each transaction output
+        for (size_t output_index = 0; output_index < tx.vout.size(); ++output_index) {
+            const auto& out = tx.vout[output_index];
+            
+            // Skip non-NFT outputs
+            if (out.target.type() != typeid(txout_nft)) continue;
+
+            // Get NFT output details
+            const auto& nft_out = boost::get<txout_nft>(out.target);
+            
+            // Validate corresponding metadata exists
+            if (output_index >= nft_extras.size()) {
+                LOG_ERROR("NFT output at index " << output_index 
+                          << " missing metadata in tx " << tx_hash);
+                return false;
+            }
+
+            // Prepare NFT info record
+            nft_info info;
+            info.metadata = nft_extras[output_index].metadata;
+            info.tx_hash = tx_hash;
+            info.output_index = output_index;
+            info.owner = nft_out.owner;
+            info.creation_height = height;
+            info.spent = false; // Initially unspent
+
+            // Add to database
+            if (!m_nftdb->add_nft(info)) {
+                LOG_ERROR("Failed to add NFT " << info.metadata.nft_id 
+                          << " from tx " << tx_hash);
+                return false;
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception processing NFT data for tx " << tx_hash 
+                  << ": " << e.what());
+        return false;
+    }
+
+    return true;
+}
+//------------------------------------------------------------------
 // This function removes blocks from the top of blockchain.
 // It starts a batch and calls private method pop_block_from_blockchain().
 void Blockchain::pop_blocks(uint64_t nblocks)
 {
-  uint64_t i = 0;
-  auto lock = tools::unique_locks(m_tx_pool, *this);
+    uint64_t i = 0;
+    auto lock = tools::unique_locks(m_tx_pool, *this);
+    bool stop_batch = m_db->batch_start();
 
-  bool stop_batch = m_db->batch_start();
-
-  try
-  {
-    const uint64_t blockchain_height = m_db->height();
-    if (blockchain_height > 0)
-      nblocks = std::min(nblocks, blockchain_height - 1);
-
-    uint64_t constexpr PERCENT_PER_PROGRESS_UPDATE = 10;
-    uint64_t const blocks_per_update               = (nblocks / PERCENT_PER_PROGRESS_UPDATE);
-
-    tools::PerformanceTimer timer;
-    for (int progress = 0; i < nblocks; ++i)
+    try
     {
-      if (nblocks >= BLOCKS_EXPECTED_IN_HOURS(24) && (i != 0 && (i % blocks_per_update == 0)))
-      {
-        MGINFO("... popping blocks " << (++progress * PERCENT_PER_PROGRESS_UPDATE) << "% completed, height: " << (blockchain_height - i) << " (" << timer.seconds() << "s)");
-        timer.reset();
-      }
+        const uint64_t blockchain_height = m_db->height();
+        if (blockchain_height > 0)
+            nblocks = std::min(nblocks, blockchain_height - 1);
 
-      pop_block_from_blockchain();
+        uint64_t constexpr PERCENT_PER_PROGRESS_UPDATE = 10;
+        uint64_t const blocks_per_update = (nblocks / PERCENT_PER_PROGRESS_UPDATE);
+
+        tools::PerformanceTimer timer;
+        for (int progress = 0; i < nblocks; ++i)
+        {
+            if (nblocks >= BLOCKS_EXPECTED_IN_HOURS(24) && (i != 0 && (i % blocks_per_update == 0)))
+            {
+                MGINFO("... popping blocks " << (++progress * PERCENT_PER_PROGRESS_UPDATE) 
+                       << "% completed, height: " << (blockchain_height - i));
+                timer.reset();
+            }
+
+            // Get the block before popping
+                       const uint64_t current_height = blockchain_height - i - 1;
+            block blk = m_db->get_block_from_height(current_height);
+
+            // Remove NFT data
+            if (!remove_nft_data(blk)) {
+                LOG_ERROR("Failed to remove NFT data at height " << current_height);
+                throw std::runtime_error("NFT data removal failed");
+            }
+            // Then remove the block
+            pop_block_from_blockchain();
+        }
     }
-  }
-  catch (const std::exception& e)
-  {
-    LOG_ERROR("Error when popping blocks after processing " << i << " blocks: " << e.what());
+    catch (const std::exception& e)
+    {
+        LOG_ERROR("Error when popping blocks after processing " << i << " blocks: " << e.what());
+        if (stop_batch)
+            m_db->batch_abort();
+        return;
+    }
+
+    // Post-pop cleanup
+    auto split_height = m_db->height();
+    for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
+        hook->blockchain_detached(split_height, true /*by_pop_blocks*/);
+    
+    load_missing_blocks_into_guus_subsystems();
+
     if (stop_batch)
-      m_db->batch_abort();
-    return;
-  }
+        m_db->batch_stop();
+}
+//------------------------------------------------------------------
+// NFT data removal implementation
+bool Blockchain::remove_nft_data(const block& block)
+{
+    try {
+        // Get all transaction hashes in the block
+        std::vector<crypto::hash> tx_hashes;
+        tx_hashes.reserve(block.tx_hashes.size() + 1);
+        tx_hashes.push_back(cryptonote::get_transaction_hash(block.miner_tx));
+        tx_hashes.insert(tx_hashes.end(), block.tx_hashes.begin(), block.tx_hashes.end());
 
-  auto split_height = m_db->height();
-  for (BlockchainDetachedHook* hook : m_blockchain_detached_hooks)
-    hook->blockchain_detached(split_height, true /*by_pop_blocks*/);
-  load_missing_blocks_into_guus_subsystems();
+        // Process each transaction
+        for (const auto& tx_hash : tx_hashes) {
+            transaction tx;
+            if (!m_db->get_tx(tx_hash, tx)) {
+                LOG_ERROR("Failed to get transaction " << tx_hash << " for NFT removal");
+                return false;
+            }
 
-  if (stop_batch)
-    m_db->batch_stop();
+            // Remove NFTs associated with this transaction
+            if (!m_nftdb->delete_nfts_by_tx(tx_hash)) {
+                LOG_ERROR("Failed to remove NFTs for transaction " << tx_hash);
+                return false;
+            }
+        }
+        return true;
+    } catch (const std::exception& e) {
+        LOG_ERROR("Exception removing NFT data: " << e.what());
+        return false;
+    }
 }
 //------------------------------------------------------------------
 // This function tells BlockchainDB to remove the top block from the

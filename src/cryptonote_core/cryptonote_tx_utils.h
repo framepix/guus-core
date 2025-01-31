@@ -34,6 +34,7 @@
 #include <boost/serialization/utility.hpp>
 #include "ringct/rctOps.h"
 #include "cryptonote_core/frame_pix_list.h"
+#include "nft_db.h"
 
 namespace cryptonote
 {
@@ -49,6 +50,35 @@ namespace cryptonote
 
   uint64_t get_portion_of_reward                (uint64_t portions, uint64_t total_frame_pix_reward);
   uint64_t frame_pix_reward_formula          (uint64_t base_reward, uint8_t hard_fork_version);
+
+  bool parse_tx_extra_nft(const std::vector<uint8_t>& tx_extra, tx_extra_nft& nft_info);
+
+    enum class nft_decrypt_result {
+    success = 0,
+    derivation_failed,
+    decryption_failed,
+    invalid_input
+    };
+
+    enum class nft_owner_result {
+    success = 0,
+    no_metadata,
+    invalid_metadata,
+    decryption_failed,
+    invalid_key
+    };
+
+    nft_decrypt_result decrypt_owner_key(
+    const crypto::public_key& encrypted_address,
+    const crypto::secret_key& private_view_key,
+    const crypto::public_key& sender_public_key,
+    crypto::public_key& owner_key) noexcept;
+
+    nft_owner_result get_tx_owner_key(
+    const transaction& tx, 
+    const crypto::secret_key& private_view_key,
+    crypto::public_key& owner_key) noexcept;
+
 
   struct guus_miner_tx_context // NOTE(guus): All the custom fields required by Guus to use construct_miner_tx
   {
@@ -69,6 +99,12 @@ namespace cryptonote
       const blobdata& extra_nonce = blobdata(),
       uint8_t hard_fork_version = 1,
       const guus_miner_tx_context &miner_context = {});
+
+    bool validate_nft_tx(const transaction& tx, const crypto::hash& tx_hash, NFTDB& nftdb);
+    bool construct_tx_with_nft(const account_keys& sender_keys, 
+                              const nft_metadata& nft_data,
+                              transaction& tx,
+                              const crypto::public_key& owner);
 
   struct block_reward_parts
   {
@@ -98,6 +134,14 @@ namespace cryptonote
     std::vector<frame_pixs::payout_entry> frame_pix_payouts = frame_pixs::null_winner;
   };
 
+
+   template<typename T>
+   bool append_tx_extra_to_extra(std::vector<uint8_t>& tx_extra, const T& field)
+   {
+    tx_extra.insert(tx_extra.end(), reinterpret_cast<const uint8_t*>(&field),
+                    reinterpret_cast<const uint8_t*>(&field) + sizeof(field));
+    return true;
+   }
   // NOTE(guus): I would combine this into get_base_block_reward, but
   // cryptonote_basic as a library is to be able to trivially link with
   // cryptonote_core since it would have a circular dependency on Blockchain
@@ -212,7 +256,6 @@ namespace cryptonote
     const uint64_t seed_height, const crypto::hash& seed_hash);
   crypto::hash get_block_longhash(const Blockchain *pb, const block& b, const uint64_t height, const int miners);
   void get_block_longhash_reorg(const uint64_t split_height);
-
 }
 
 BOOST_CLASS_VERSION(cryptonote::tx_source_entry, 1)

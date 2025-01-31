@@ -372,3 +372,70 @@ bool NFTDB::mark_as_spent(uint64_t nft_id)
     sqlite3_finalize(stmt);
     return rc == SQLITE_DONE;
 }
+
+bool NFTDB::delete_nfts_by_tx(const crypto::hash& tx_hash) {
+    std::lock_guard<std::mutex> lock(m_db_mutex);
+    const char* sql = "DELETE FROM nft_info WHERE tx_hash = ?";
+    
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+
+    try {
+        sqlite3_bind_blob(stmt, 1, &tx_hash, sizeof(crypto::hash), SQLITE_STATIC);
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(m_db));
+    } catch (...) {
+        sqlite3_finalize(stmt);
+        throw;
+    }
+    
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
+}
+
+bool NFTDB::delete_nfts_by_height(uint64_t height) {
+    std::lock_guard<std::mutex> lock(m_db_mutex);
+    const char* sql = "DELETE FROM nft_info WHERE creation_height = ?";
+    
+    sqlite3_stmt* stmt;
+    int rc = sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+
+    try {
+        sqlite3_bind_int64(stmt, 1, height);
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_DONE) throw std::runtime_error(sqlite3_errmsg(m_db));
+    } catch (...) {
+        sqlite3_finalize(stmt);
+        throw;
+    }
+    
+    sqlite3_finalize(stmt);
+    return rc == SQLITE_DONE;
+}
+
+bool NFTDB::is_nft_spent(uint64_t nft_id)  {
+    std::lock_guard<std::mutex> lock(m_db_mutex);
+    sqlite3_stmt* stmt;
+    const char* sql = "SELECT spent FROM nft_info WHERE nft_id = ?;";
+    
+    if (sqlite3_prepare_v2(m_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        LOG_ERROR("Failed to prepare statement: " << sqlite3_errmsg(m_db));
+        return false;
+    }
+
+    sqlite3_bind_int64(stmt, 1, nft_id);
+    int rc = sqlite3_step(stmt);
+
+    bool spent = false;
+    if (rc == SQLITE_ROW) {
+        spent = sqlite3_column_int(stmt, 0) != 0;
+    } else if (rc != SQLITE_DONE) {
+        LOG_ERROR("Failed to fetch NFT spent status: " << sqlite3_errmsg(m_db));
+    }
+
+    sqlite3_finalize(stmt);
+    return spent;
+}
+

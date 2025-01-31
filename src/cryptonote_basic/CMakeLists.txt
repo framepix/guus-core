@@ -29,6 +29,7 @@
 
 add_library(cryptonote_basic
   account.cpp
+  nft_transaction.cpp
   cryptonote_basic_impl.cpp
   cryptonote_format_utils.cpp
   difficulty.cpp

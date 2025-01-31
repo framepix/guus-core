@@ -45,6 +45,7 @@
 #include "crypto/crypto.h"
 #include "ringct/rctTypes.h"
 #include "ringct/rctOps.h"
+#include "cryptonote_core/nft_db.h"
 
 //namespace cryptonote {
 namespace boost
@@ -103,6 +104,14 @@ namespace boost
   {
     a & x.key;
   }
+
+  template <class Archive>
+  inline void serialize(Archive &a, cryptonote::txout_nft &x, const boost::serialization::version_type ver)
+  {
+    a & x.nft_id;
+    a & x.owner;
+  }
+
 
   template <class Archive>
   inline void serialize(Archive &a, cryptonote::txout_to_scripthash &x, const boost::serialization::version_type ver)

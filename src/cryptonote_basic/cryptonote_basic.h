@@ -1,3 +1,4 @@
+
 // Copyright (c) 2014-2019, The Monero Project
 // 
 // All rights reserved.
@@ -46,11 +47,11 @@
 #include "crypto/hash.h"
 #include "ringct/rctTypes.h"
 #include "device/device.hpp"
+#include "cryptonote_core/nft_db.h"
 
 namespace cryptonote
 {
   typedef std::vector<crypto::signature> ring_signature;
-
 
   /* outputs */
 
@@ -130,10 +131,21 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+    struct txout_nft
+    {
+        uint64_t nft_id;
+        crypto::public_key owner;
+        std::vector<uint8_t> metadata;
+        BEGIN_SERIALIZE_OBJECT()
+            VARINT_FIELD(nft_id)
+            FIELD(owner)
+            FIELD(metadata)
+        END_SERIALIZE()
+    };
 
   typedef boost::variant<txin_gen, txin_to_script, txin_to_scripthash, txin_to_key> txin_v;
 
-  typedef boost::variant<txout_to_script, txout_to_scripthash, txout_to_key> txout_target_v;
+  typedef boost::variant<txout_to_script, txout_to_scripthash, txout_to_key, txout_nft> txout_target_v;
 
   //typedef std::pair<uint64_t, txout> out_t;
   struct tx_out
@@ -245,7 +257,7 @@ namespace cryptonote
       return unlock_time;
     }
   };
-
+    struct tx_extra_nft;
   class transaction: public transaction_prefix
   {
   private:
@@ -261,6 +273,10 @@ namespace cryptonote
     mutable crypto::hash hash;
     mutable size_t blob_size;
 
+    // Add NFT methods
+    bool is_nft_transaction() const noexcept;
+    uint64_t get_nft_id() const noexcept;
+    const tx_extra_nft* get_nft_metadata() const;
     bool pruned;
 
     std::atomic<unsigned int> unprunable_size;
@@ -378,7 +394,7 @@ namespace cryptonote
         pruned = true;
       return ar.stream().good();
     }
-
+   
   private:
     static size_t get_signature_size(const txin_v& tx_in);
   };
@@ -614,6 +630,7 @@ namespace std {
 
 BLOB_SERIALIZER(cryptonote::txout_to_key);
 BLOB_SERIALIZER(cryptonote::txout_to_scripthash);
+BLOB_SERIALIZER(cryptonote::txout_nft);
 
 VARIANT_TAG(binary_archive, cryptonote::txin_gen, 0xff);
 VARIANT_TAG(binary_archive, cryptonote::txin_to_script, 0x0);
@@ -624,6 +641,7 @@ VARIANT_TAG(binary_archive, cryptonote::txout_to_scripthash, 0x1);
 VARIANT_TAG(binary_archive, cryptonote::txout_to_key, 0x2);
 VARIANT_TAG(binary_archive, cryptonote::transaction, 0xcc);
 VARIANT_TAG(binary_archive, cryptonote::block, 0xbb);
+VARIANT_TAG(binary_archive, cryptonote::txout_nft, 0x4);
 
 VARIANT_TAG(json_archive, cryptonote::txin_gen, "gen");
 VARIANT_TAG(json_archive, cryptonote::txin_to_script, "script");
@@ -634,6 +652,7 @@ VARIANT_TAG(json_archive, cryptonote::txout_to_scripthash, "scripthash");
 VARIANT_TAG(json_archive, cryptonote::txout_to_key, "key");
 VARIANT_TAG(json_archive, cryptonote::transaction, "tx");
 VARIANT_TAG(json_archive, cryptonote::block, "block");
+VARIANT_TAG(json_archive, cryptonote::txout_nft, "nft");
 
 VARIANT_TAG(debug_archive, cryptonote::txin_gen, "gen");
 VARIANT_TAG(debug_archive, cryptonote::txin_to_script, "script");
@@ -644,3 +663,4 @@ VARIANT_TAG(debug_archive, cryptonote::txout_to_scripthash, "scripthash");
 VARIANT_TAG(debug_archive, cryptonote::txout_to_key, "key");
 VARIANT_TAG(debug_archive, cryptonote::transaction, "tx");
 VARIANT_TAG(debug_archive, cryptonote::block, "block");
+VARIANT_TAG(debug_archive, cryptonote::txout_nft, "nft");

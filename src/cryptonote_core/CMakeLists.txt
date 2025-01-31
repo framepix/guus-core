@@ -28,7 +28,9 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 add_library(cryptonote_core
+  nft_db.cpp
   blockchain.cpp
+  nft_utils.cpp
   cryptonote_core.cpp
   frame_pix_rules.cpp
   frame_pix_list.cpp

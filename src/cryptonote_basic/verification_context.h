@@ -86,6 +86,10 @@ namespace cryptonote
     bool m_tx_extra_too_big;
     std::string m_verbose_error;
     vote_verification_context m_vote_ctx;
+    bool m_invalid_nft_metadata;
+    bool m_invalid_nft_ownership;
+    bool m_invalid_nft_state;
+    bool m_invalid_signature;
 
     BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(m_should_be_relayed)
@@ -106,7 +110,10 @@ namespace cryptonote
       KV_SERIALIZE(m_key_image_blacklisted);
       KV_SERIALIZE(m_verbose_error);
       KV_SERIALIZE(m_vote_ctx)
-
+      KV_SERIALIZE(m_invalid_nft_metadata)
+      KV_SERIALIZE(m_invalid_nft_ownership)
+      KV_SERIALIZE(m_invalid_nft_state)
+      KV_SERIALIZE(m_invalid_signature)
     END_KV_SERIALIZE_MAP()
   };
 

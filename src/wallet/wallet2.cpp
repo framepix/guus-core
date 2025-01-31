@@ -1734,6 +1734,16 @@ void wallet2::cache_tx_data(const cryptonote::transaction& tx, const crypto::has
   }
 }
 //----------------------------------------------------------------------------------------------------
+/*bool wallet2::get_private_view_key(crypto::secret_key &key) {  //get_private_view_key(epee::mlocked<crypto::secret_key>& private_view_key) const {
+    if (m_account.get_keys().m_view_secret_key == crypto::null_skey) {
+        LOG_PRINT_L1("Private view key is not available");
+        return false;
+    }
+
+    key = m_account.get_keys().m_view_secret_key;
+    return true;
+}*/
+//----------------------------------------------------------------------------------------------------
 void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote::transaction& tx, const std::vector<uint64_t> &o_indices,
     uint64_t height, uint64_t ts, bool miner_tx, bool pool, bool blink, bool double_spend_seen,
     const tx_cache_data &tx_cache_data, std::map<std::pair<uint64_t, uint64_t>, size_t> *output_tracker_cache)

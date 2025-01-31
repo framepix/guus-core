@@ -32,7 +32,7 @@
 
 #include <string>
 
-#include "easylogging++.h"
+#include <easylogging++.h>
 
 #undef GUUS_DEFAULT_LOG_CATEGORY
 #define GUUS_DEFAULT_LOG_CATEGORY "default"

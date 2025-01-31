@@ -52,12 +52,14 @@
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "cryptonote_basic/difficulty.h"
 #include "cryptonote_tx_utils.h"
+#include "cryptonote_config.h"
 #include "cryptonote_basic/verification_context.h"
 #include "crypto/hash.h"
 #include "checkpoints/checkpoints.h"
 #include "cryptonote_basic/hardfork.h"
 #include "blockchain_db/blockchain_db.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "nft_db.h"
 
 struct sqlite3;
 namespace frame_pixs { class frame_pix_list; };
@@ -101,7 +103,15 @@ namespace cryptonote
   /************************************************************************/
   class Blockchain
   {
+    std::string m_data_dir;
+    std::unique_ptr<NFTDB> m_nftdb;
   public:
+    NFTDB& get_nftdb() { return *m_nftdb; }
+    bool validate_nft_metadata(const nft_metadata& metadata) const;
+
+    bool load_nft_data(const transaction& tx, uint64_t height);
+    bool remove_nft_data(const block& bl);
+
     /**
      * @brief container for passing a block and metadata about it on the blockchain
      */
@@ -154,7 +164,7 @@ namespace cryptonote
      *
      * @return true on success, false if any initialization steps fail
      */
-    bool init(BlockchainDB* db, HardFork*& hf, sqlite3 *lns_db, const network_type nettype = MAINNET, bool offline = false);
+    bool init(BlockchainDB* db, HardFork*& hf, sqlite3 *lns_db,  const network_type nettype = MAINNET, bool offline = false);
 
     /**
      * @brief Uninitializes the blockchain state
