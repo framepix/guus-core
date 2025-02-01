@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <boost/filesystem.hpp>
 #include <stdexcept>
+#include "cryptonote_basic/account.h"
 
 using namespace cryptonote;
 using namespace boost::filesystem;

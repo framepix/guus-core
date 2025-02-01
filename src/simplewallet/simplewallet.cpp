@@ -281,9 +281,9 @@ namespace
   const char* USAGE_LNS_PRINT_NAME_TO_OWNERS("lns_print_name_to_owners [type=<N1|all>[,<N2>...]] <name>");
 
   // NFT
-  const char* USAGE_NFT_CREATE("Create NFT: <id> <description> <metadata_uri> [image_path]");
-  const char* USAGE_NFT_LIST("List owned NFTs");
-  const char* USAGE_NFT_TRANSFER("Transfer NFT: <nft_id> <address>");
+  const char* USAGE_NFT_CREATE("nft_create <id> <description> <metadata_uri> [image_path]");
+  const char* USAGE_NFT_LIST("nft_list");
+  const char* USAGE_NFT_TRANSFER("transfer <nft_id> <address>");
 
 #if defined (GUUS_ENABLE_INTEGRATION_TEST_HOOKS)
   std::string input_line(const std::string &prompt, bool yesno = false)
@@ -6731,9 +6731,10 @@ bool simple_wallet::nft_create(const std::vector<std::string>& args)
 {
     try {
         if (args.size() < 3) {
-          PRINT_USAGE(USAGE_NFT_CREATE);
+            PRINT_USAGE(USAGE_NFT_CREATE);
+            return false; // Ensure the function exits if usage is printed
         }
-        
+
         uint64_t nft_id;
         if (!epee::string_tools::get_xtype_from_string(nft_id, args[0])) {
             throw std::runtime_error("Invalid NFT ID format");
@@ -6741,12 +6742,23 @@ bool simple_wallet::nft_create(const std::vector<std::string>& args)
 
         std::vector<uint8_t> image_data;
         if (args.size() > 3) {
-            if (!epee::file_io_utils::load_file_to_vector(args[3], image_data)) {
-                throw std::runtime_error("Failed to load image file");
+            // Debug output: Print the file path
+            success_msg_writer() << "Loading image file from path: " << args[3];
+
+            // Load file to string first
+            std::string image_str;
+            if (!epee::file_io_utils::load_file_to_string(args[3], image_str)) {
+                throw std::runtime_error("Failed to load image file: " + args[3]);
             }
+            // Convert string to vector<uint8_t>
+            image_data.assign(image_str.begin(), image_str.end());
         }
 
-        m_wallet->create_nft(nft_id, args[1], args[2], image_data);
+        uint32_t priority = 1; // Default priority
+        uint64_t fee = 0; // Default fee
+
+        // Call create_nft with proper arguments
+        m_wallet->create_nft(nft_id, args[1], args[2], image_data, priority, fee);
         success_msg_writer() << "NFT creation transaction submitted.";
         return true;
     } catch (const std::exception& e) {
@@ -6772,8 +6784,8 @@ bool simple_wallet::nft_list(const std::vector<std::string>& args)
         success_msg_writer() 
             << nft.nft_id << " | "
             << (nft.spent ? "Spent" : "Unspent") << " | "
-            << nft.height << " | "
-            << nft.metadata_uri << " | "
+            << nft.creation_height << " | "
+            << nft.spent << " | "
             << nft.tx_hash;
     }
     return true;
@@ -6792,12 +6804,14 @@ bool simple_wallet::nft_transfer(const std::vector<std::string>& args)
             throw std::runtime_error("Invalid NFT ID format");
         }
 
-        account_public_address address;
-        if (!get_account_address_from_str(address, m_wallet->nettype(), args[1])) {
+        //account_public_address address;
+         cryptonote::address_parse_info info;
+
+        if (!get_account_address_from_str(info, m_wallet->nettype(), args[1])) {
             throw std::runtime_error("Invalid recipient address");
         }
-
-        if (!m_wallet->transfer_nft(nft_id, address)) {
+         uint32_t priority = 1; // Default priority
+        if (!m_wallet->transfer_nft(nft_id, info.address, priority)) {
             throw std::runtime_error("NFT transfer failed");
         }
         
@@ -8829,39 +8843,59 @@ void simple_wallet::print_accounts()
 //----------------------------------------------------------------------------------------------------
 void simple_wallet::print_accounts(const std::string& tag)
 {
-  const std::pair<std::map<std::string, std::string>, std::vector<std::string>>& account_tags = m_wallet->get_account_tags();
-  if (tag.empty())
-  {
-    success_msg_writer() << tr("Untagged accounts:");
-  }
-  else
-  {
-    if (account_tags.first.count(tag) == 0)
-    {
-      fail_msg_writer() << boost::format(tr("Tag %s is unregistered.")) % tag;
-      return;
+    const std::pair<std::map<std::string, std::string>, std::vector<std::string>>& account_tags = m_wallet->get_account_tags();
+    
+    if (tag.empty()) {
+        success_msg_writer() << tr("Untagged accounts:");
+    } else {
+        if (account_tags.first.count(tag) == 0) {
+            fail_msg_writer() << boost::format(tr("Tag %s is unregistered.")) % tag;
+            return;
+        }
+        success_msg_writer() << tr("Accounts with tag: ") << tag;
+        success_msg_writer() << tr("Tag's description: ") << account_tags.first.find(tag)->second;
     }
-    success_msg_writer() << tr("Accounts with tag: ") << tag;
-    success_msg_writer() << tr("Tag's description: ") << account_tags.first.find(tag)->second;
-  }
-  success_msg_writer() << boost::format("  %15s %21s %21s %21s") % tr("Account") % tr("Balance") % tr("Unlocked balance") % tr("Label");
-  uint64_t total_balance = 0, total_unlocked_balance = 0;
-  for (uint32_t account_index = 0; account_index < m_wallet->get_num_subaddress_accounts(); ++account_index)
-  {
-    if (account_tags.second[account_index] != tag)
-      continue;
-    success_msg_writer() << boost::format(tr(" %c%8u %6s %21s %21s %21s"))
-      % (m_current_subaddress_account == account_index ? '*' : ' ')
-      % account_index
-      % m_wallet->get_subaddress_as_str({account_index, 0}).substr(0, 6)
-      % print_money(m_wallet->balance(account_index))
-      % print_money(m_wallet->unlocked_balance(account_index))
-      % m_wallet->get_subaddress_label({account_index, 0});
-    total_balance += m_wallet->balance(account_index);
-    total_unlocked_balance += m_wallet->unlocked_balance(account_index);
-  }
-  success_msg_writer() << tr("----------------------------------------------------------------------------------");
-  success_msg_writer() << boost::format(tr("%15s %21s %21s")) % "Total" % print_money(total_balance) % print_money(total_unlocked_balance);
+    
+    success_msg_writer() << boost::format("  %15s %21s %21s %21s") % tr("Account") % tr("Balance") % tr("Unlocked balance") % tr("Label");
+    uint64_t total_balance = 0, total_unlocked_balance = 0;
+    
+    for (uint32_t account_index = 0; account_index < m_wallet->get_num_subaddress_accounts(); ++account_index) {
+        if (account_tags.second[account_index] != tag)
+            continue;
+        success_msg_writer() << boost::format(tr(" %c%8u %6s %21s %21s %21s"))
+            % (m_current_subaddress_account == account_index ? '*' : ' ')
+            % account_index
+            % m_wallet->get_subaddress_as_str({account_index, 0}).substr(0, 6)
+            % print_money(m_wallet->balance(account_index))
+            % print_money(m_wallet->unlocked_balance(account_index))
+            % m_wallet->get_subaddress_label({account_index, 0});
+        total_balance += m_wallet->balance(account_index);
+        total_unlocked_balance += m_wallet->unlocked_balance(account_index);
+    }
+    
+    success_msg_writer() << tr("----------------------------------------------------------------------------------");
+    success_msg_writer() << boost::format(tr("%15s %21s %21s")) % "Total" % print_money(total_balance) % print_money(total_unlocked_balance);
+    
+    // Fetch NFTs
+    const auto& nfts = m_wallet->get_nfts();
+
+    // Print the NFTs
+    if (!nfts.empty()) {
+        success_msg_writer() << "\nOwned NFTs:";
+        success_msg_writer() << "ID        | Status   | Created Height | Image URL               | Transaction Hash";
+        success_msg_writer() << "----------+----------+----------------+-------------------------+------------------------------";
+
+        for (const auto& nft : nfts) {
+            success_msg_writer()
+                << nft.nft_id << " | "
+                << (nft.spent ? "Spent" : "Unspent") << " | "
+                << nft.creation_height << " | "
+                << nft.spent << " | "
+                << nft.tx_hash;
+        }
+    } else {
+        success_msg_writer() << "No NFTs found in wallet.";
+    }
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::print_address(const std::vector<std::string> &args/* = std::vector<std::string>()*/)

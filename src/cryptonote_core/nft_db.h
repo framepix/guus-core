@@ -1,4 +1,5 @@
-#pragma once
+#ifndef NFT_DB_H
+#define NFT_DB_H
 
 #include "serialization/keyvalue_serialization.h"
 #include "cryptonote_basic/cryptonote_basic.h"
@@ -6,9 +7,14 @@
 #include <string>
 #include <mutex>
 #include <vector>
+#include <cstdint>
+#include <string>
+#include "serialization/serialization.h"
+#include "crypto/crypto.h"
 
 namespace cryptonote
 {
+    struct account_public_address;
     struct nft_metadata
     {
         uint8_t version;
@@ -20,6 +26,7 @@ namespace cryptonote
         std::vector<uint8_t> image_data;
         crypto::hash image_hash;
         uint64_t block_height;
+        std::string image_url;
 
     BEGIN_SERIALIZE()
     FIELD(version)
@@ -31,6 +38,7 @@ namespace cryptonote
     FIELD(image_data)
     FIELD(image_hash)
     FIELD(block_height)
+    FIELD(image_url)
     END_SERIALIZE()
     };
 
@@ -40,9 +48,19 @@ namespace cryptonote
         crypto::hash tx_hash;
         uint64_t nft_id;
         uint64_t output_index;
-        crypto::public_key owner;
+        cryptonote::account_public_address* owner;
         uint64_t creation_height;
         bool spent;
+
+        BEGIN_SERIALIZE()
+            FIELD(metadata)
+            FIELD(tx_hash)
+            FIELD(nft_id)
+            FIELD(output_index)
+            FIELD(owner)
+            FIELD(creation_height)
+            FIELD(spent)
+        END_SERIALIZE()
     };
 
     struct tx_extra_nft
@@ -92,3 +110,5 @@ namespace cryptonote
         bool migrate_schema();
     };
 }
+
+#endif // NFT_DB_H

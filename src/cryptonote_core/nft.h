@@ -9,7 +9,7 @@ namespace nft {
         transfer,
     };
 
-    uint64_t burn_needed(uint8_t hf_version, nft_type type) {
+    inline uint64_t nft_burn_needed(uint8_t hf_version, nft_type type) {
         switch (type) {
             case nft_type::creation:
                 return NFT_CREATION_BURN_AMOUNT;

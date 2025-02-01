@@ -1646,7 +1646,7 @@ namespace cryptonote
         }
 
         for (const auto& signature : sig_set) {
-            if (!crypto::check_signature(tx.hash, info.owner, signature)) {
+            if (!crypto::check_signature(tx.hash, info.owner->m_spend_public_key, signature)) {
                 MERROR("Invalid NFT ownership signature");
                 return false;
             }

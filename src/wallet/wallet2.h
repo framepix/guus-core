@@ -952,9 +952,17 @@ private:
     // all locked & unlocked balances of all subaddress accounts
     uint64_t balance_all() const;
     uint64_t unlocked_balance_all(uint64_t *blocks_to_unlock = NULL) const;
-    void transfer_selected_rct(std::vector<cryptonote::tx_destination_entry> dsts, const std::vector<size_t>& selected_transfers, size_t fake_outputs_count,
+    void transfer_selected_rct(std::vector<cryptonote::tx_destination_entry> dsts, const std::vector<size_t>& selected_transfers, 
+     size_t fake_outputs_count,
       std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
-      uint64_t unlock_time, uint64_t fee, const std::vector<uint8_t>& extra, cryptonote::transaction& tx, pending_tx &ptx, const rct::RCTConfig &rct_config, const cryptonote::guus_construct_tx_params &guus_tx_params);
+      uint64_t unlock_time, uint64_t fee, const std::vector<uint8_t>& extra, cryptonote::transaction& tx, pending_tx &ptx,
+      const rct::RCTConfig &rct_config, const cryptonote::guus_construct_tx_params &guus_tx_params);
+
+    void transfer_selected_nft(std::vector<cryptonote::tx_destination_entry> dsts, const std::vector<size_t>& selected_transfers,
+     size_t fake_outputs_count,
+      std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+      uint64_t unlock_time, uint64_t fee, const std::vector<uint8_t>& extra, cryptonote::transaction& tx, pending_tx &ptx,
+      const rct::RCTConfig &rct_config, const cryptonote::nft_construct_tx_params &guus_tx_params);
 
     void commit_tx(pending_tx& ptx_vector, bool blink = false);
     void commit_tx(std::vector<pending_tx>& ptx_vector, bool blink = false);

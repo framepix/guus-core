@@ -738,16 +738,16 @@ bool Blockchain::load_nft_data(const transaction& tx, uint64_t height)
         // Process each transaction output
         for (size_t output_index = 0; output_index < tx.vout.size(); ++output_index) {
             const auto& out = tx.vout[output_index];
-            
+
             // Skip non-NFT outputs
             if (out.target.type() != typeid(txout_nft)) continue;
 
             // Get NFT output details
             const auto& nft_out = boost::get<txout_nft>(out.target);
-            
+
             // Validate corresponding metadata exists
             if (output_index >= nft_extras.size()) {
-                LOG_ERROR("NFT output at index " << output_index 
+                LOG_ERROR("NFT output at index " << output_index
                           << " missing metadata in tx " << tx_hash);
                 return false;
             }
@@ -757,19 +757,23 @@ bool Blockchain::load_nft_data(const transaction& tx, uint64_t height)
             info.metadata = nft_extras[output_index].metadata;
             info.tx_hash = tx_hash;
             info.output_index = output_index;
-            info.owner = nft_out.owner;
+            
+            // Assign owner (assuming nft_out.owner is a public key)
+            info.owner->m_spend_public_key = nft_out.owner;              // Assign spend key
+            info.owner->m_view_public_key = crypto::null_pkey;           // Placeholder for missing view key
+
             info.creation_height = height;
             info.spent = false; // Initially unspent
 
             // Add to database
             if (!m_nftdb->add_nft(info)) {
-                LOG_ERROR("Failed to add NFT " << info.metadata.nft_id 
+                LOG_ERROR("Failed to add NFT " << info.metadata.nft_id
                           << " from tx " << tx_hash);
                 return false;
             }
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("Exception processing NFT data for tx " << tx_hash 
+        LOG_ERROR("Exception processing NFT data for tx " << tx_hash
                   << ": " << e.what());
         return false;
     }
