@@ -280,6 +280,11 @@ namespace
   const char* USAGE_LNS_PRINT_OWNERS_TO_NAMES("lns_print_owners_to_names [<owner>, ...]");
   const char* USAGE_LNS_PRINT_NAME_TO_OWNERS("lns_print_name_to_owners [type=<N1|all>[,<N2>...]] <name>");
 
+  // NFT
+  const char* USAGE_NFT_CREATE("Create NFT: <id> <description> <metadata_uri> [image_path]");
+  const char* USAGE_NFT_LIST("List owned NFTs");
+  const char* USAGE_NFT_TRANSFER("Transfer NFT: <nft_id> <address>");
+
 #if defined (GUUS_ENABLE_INTEGRATION_TEST_HOOKS)
   std::string input_line(const std::string &prompt, bool yesno = false)
   {
@@ -2159,7 +2164,7 @@ bool simple_wallet::welcome(const std::vector<std::string> &args)
   message_writer() << tr("Flaws in Guus may be discovered in the future, and attacks may be developed to peek under some");
   message_writer() << tr("of the layers of privacy Guus provides. Be safe and practice defense in depth.");
   message_writer() << "";
-  message_writer() << tr("Welcome to Guus and financial privacy. For more information, see https://guus.network");
+  message_writer() << tr("Welcome to Guus and financial privacy. For more information, see https://guus.website");
   return true;
 }
 
@@ -3121,6 +3126,36 @@ Pending or Failed: "failed"|"pending",  "out", Time, Amount*, Transaction Hash, 
                            boost::bind(&simple_wallet::lns_make_update_mapping_signature, this, _1),
                            tr(USAGE_LNS_MAKE_UPDATE_MAPPING_SIGNATURE),
                            tr(tools::wallet_rpc::COMMAND_RPC_LNS_MAKE_UPDATE_SIGNATURE::description));
+
+
+         //  GUUS NFT
+  m_cmd_binder.set_handler("nft_create",
+                           boost::bind(&simple_wallet::nft_create, this, _1),
+                           tr(USAGE_NFT_CREATE),
+                           tr("Create the Guus NFT"));
+
+  m_cmd_binder.set_handler("nft_transfer",
+                           boost::bind(&simple_wallet::nft_transfer, this, _1),
+                           tr(USAGE_NFT_TRANSFER),
+                           tr("Transfer NFT to another person"));
+
+  m_cmd_binder.set_handler("nft_list",
+                           boost::bind(&simple_wallet::nft_list, this, _1),
+                           tr(USAGE_NFT_LIST),
+                           tr(R"(Show the NFTs owned by the wallet.
+Output format:
+NFT ID, Status, Metadata URI, Creation Block Height, Transaction Hash
+
+Status:
+  - "Unspent": The NFT is still in possession.
+  - "Spent": The NFT has been transferred.
+
+Example Output:
+12345, Unspent, ipfs://Qm..., 1234567, a1b2c3...
+67890, Spent, ipfs://Qn..., 1234599, d4e5f6...
+)"));
+
+
 }
 
 simple_wallet::~simple_wallet()
@@ -6691,7 +6726,89 @@ bool simple_wallet::lns_print_owners_to_names(const std::vector<std::string>& ar
   }
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------------------// Create NFT command
+bool simple_wallet::nft_create(const std::vector<std::string>& args)
+{
+    try {
+        if (args.size() < 3) {
+          PRINT_USAGE(USAGE_NFT_CREATE);
+        }
+        
+        uint64_t nft_id;
+        if (!epee::string_tools::get_xtype_from_string(nft_id, args[0])) {
+            throw std::runtime_error("Invalid NFT ID format");
+        }
+
+        std::vector<uint8_t> image_data;
+        if (args.size() > 3) {
+            if (!epee::file_io_utils::load_file_to_vector(args[3], image_data)) {
+                throw std::runtime_error("Failed to load image file");
+            }
+        }
+
+        m_wallet->create_nft(nft_id, args[1], args[2], image_data);
+        success_msg_writer() << "NFT creation transaction submitted.";
+        return true;
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Error: " << e.what();
+        return false;
+    }
+}
+//-----------------------------------------------------------------------------------------------------
+// List NFTs command
+bool simple_wallet::nft_list(const std::vector<std::string>& args)
+{
+    const auto& nfts = m_wallet->get_nfts();
+    if (nfts.empty()) {
+        success_msg_writer() << "No NFTs found in wallet.";
+        return true;
+    }
+
+    success_msg_writer() << "Owned NFTs:";
+    success_msg_writer() << "ID        | Status   | Created Height | Metadata URI             | Transaction Hash";
+    success_msg_writer() << "----------+---------+----------------+---------------------------+------------------------------";
+    
+    for (const auto& nft : nfts) {
+        success_msg_writer() 
+            << nft.nft_id << " | "
+            << (nft.spent ? "Spent" : "Unspent") << " | "
+            << nft.height << " | "
+            << nft.metadata_uri << " | "
+            << nft.tx_hash;
+    }
+    return true;
+}
+//-------------------------------------------------------------------
+// Transfer NFT command
+bool simple_wallet::nft_transfer(const std::vector<std::string>& args)
+{
+    try {
+        if (args.size() < 2) {
+         PRINT_USAGE(USAGE_NFT_TRANSFER);
+        }
+        
+        uint64_t nft_id;
+        if (!epee::string_tools::get_xtype_from_string(nft_id, args[0])) {
+            throw std::runtime_error("Invalid NFT ID format");
+        }
+
+        account_public_address address;
+        if (!get_account_address_from_str(address, m_wallet->nettype(), args[1])) {
+            throw std::runtime_error("Invalid recipient address");
+        }
+
+        if (!m_wallet->transfer_nft(nft_id, address)) {
+            throw std::runtime_error("NFT transfer failed");
+        }
+        
+        success_msg_writer() << "NFT transfer transaction submitted.";
+        return true;
+    } catch (const std::exception& e) {
+        fail_msg_writer() << "Error: " << e.what();
+        return false;
+    }
+}
+//-------------------------------------------------------------------------------------
 bool simple_wallet::sweep_unmixable(const std::vector<std::string> &args_)
 {
   if (!try_connect_to_daemon())

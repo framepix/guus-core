@@ -50,7 +50,10 @@
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_core/nft_utils.h"
+#include "cryptonote_core/nft_db.h"
 #include "cryptonote_core/guus_name_system.h"
+#include "cryptonote_core/nft.h"
 #include "common/unordered_containers_boost_serialization.h"
 #include "common/util.h"
 #include "crypto/chacha.h"
@@ -73,6 +76,8 @@
 
 #define SUBADDRESS_LOOKAHEAD_MAJOR 50
 #define SUBADDRESS_LOOKAHEAD_MINOR 200
+
+const uint64_t DEFAULT_FEE = 1000 * COIN;
 
 class Serialization_portability_wallet_Test;
 class wallet_accessor_test;
@@ -331,8 +336,6 @@ private:
     friend class wallet_device_callback;
   public:
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
-    //bool get_private_view_key(epee::mlocked<crypto::secret_key>& private_view_key) const;
-   //bool get_private_view_key(crypto::secret_key &key);
     enum RefreshType {
       RefreshFull,
       RefreshOptimizeCoinbase,
@@ -975,6 +978,16 @@ private:
     bool parse_tx_from_str(const std::string &signed_tx_st, std::vector<tools::wallet2::pending_tx> &ptx, std::function<bool(const signed_tx_set &)> accept_func);
     std::vector<wallet2::pending_tx> create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, cryptonote::guus_construct_tx_params &tx_params);
 
+    std::vector<wallet2::pending_tx> create_transactions_nft(
+    std::vector<cryptonote::tx_destination_entry> dsts,
+    const size_t fake_outs_count,
+    const uint64_t unlock_time,
+    uint32_t priority,
+    const std::vector<uint8_t>& extra_base,
+    uint32_t subaddr_account,
+    std::set<uint32_t> subaddr_indices,
+    cryptonote::nft_construct_tx_params &tx_param);
+
     std::vector<wallet2::pending_tx> create_transactions_all(uint64_t below, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, cryptonote::txtype tx_type = cryptonote::txtype::standard);
     std::vector<wallet2::pending_tx> create_transactions_single(const crypto::key_image &ki, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, cryptonote::txtype tx_type = cryptonote::txtype::standard);
     std::vector<wallet2::pending_tx> create_transactions_from(const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, std::vector<size_t> unused_transfers_indices, std::vector<size_t> unused_dust_indices, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, cryptonote::txtype tx_type = cryptonote::txtype::standard);
@@ -1583,7 +1596,23 @@ private:
 
 
     std::atomic<bool> m_long_poll_disabled;
+    cryptonote::nft_construct_tx_params construct_nft_params(uint8_t hf_version, uint32_t priority, nft::nft_type type);
+    // NFT Methods
+    void create_nft(
+        uint64_t nft_id,
+        const std::string& description,
+        const std::string& metadata_uri,
+        const std::vector<uint8_t>& image_data,
+        uint32_t priority,
+        uint64_t fee = DEFAULT_FEE
+    );
+
+    bool transfer_nft(uint64_t nft_id, const cryptonote::account_public_address& recipient, uint32_t priority);
+    const std::vector<cryptonote::nft_info>& get_nfts() const { return m_nfts; }
+    void update_nft_state(const crypto::hash& tx_hash, bool spent);
+
   private:
+    std::vector<cryptonote::nft_info> m_nfts;
     /*!
      * \brief  Stores wallet information to wallet file.
      * \param  keys_file_name Name of wallet file

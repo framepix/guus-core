@@ -245,6 +245,42 @@ namespace cryptonote
         }
       }
     }
+    else if (tx.type == txtype::nft_transfer)
+    {
+    tx_extra_nft_transfer nft_data;
+  if (!cryptonote::get_nft_transfer_from_tx_extra(tx.extra, nft_data))
+  {
+    MERROR("Could not extract NFT transfer data from tx: " << get_transaction_hash(tx) 
+           << ", possibly invalid transaction. Rejecting.");
+    return true; // Reject invalid transactions
+  }
+
+  std::vector<transaction> pool_txs;
+  get_transactions(pool_txs);
+
+  for (const transaction& pool_tx : pool_txs)
+  {
+    if (pool_tx.type != tx.type)
+      continue; // Only compare with other NFT transfers
+
+    tx_extra_nft_transfer pool_nft_data;
+    if (!cryptonote::get_nft_transfer_from_tx_extra(pool_tx.extra, pool_nft_data))
+    {
+      LOG_PRINT_L1("Could not extract NFT transfer data from pool tx: " << get_transaction_hash(pool_tx) 
+                   << ", possibly corrupt tx in the pool.");
+      return true; // Reject potentially corrupt transactions
+    }
+
+    // Check for duplicate transfers of the same NFT ID
+    if (nft_data.nft_id == pool_nft_data.nft_id)
+    {
+      LOG_PRINT_L1("New TX: " << get_transaction_hash(tx) 
+                   << " conflicts with existing TX: " << get_transaction_hash(pool_tx) 
+                   << " already transferring NFT ID: " << nft_data.nft_id);
+      return true; // Reject duplicate transfer attempts
+        }
+      }
+     }
     else
     {
       if (tx.type != txtype::standard && tx.type != txtype::stake)

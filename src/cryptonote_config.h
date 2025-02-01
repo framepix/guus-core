@@ -112,6 +112,19 @@ static_assert(BLINK_MINER_TX_FEE_PERCENT >= 100, "blink miner fee cannot be smal
 static_assert(BLINK_BURN_FIXED >= 0, "fixed blink burn amount cannot be negative");
 static_assert(BLINK_BURN_TX_FEE_PERCENT >= 0, "blink burn tx percent cannot be negative");
 
+// NFT Limits
+const size_t MAX_NFT_IMAGE_SIZE		   = 1024 * 1024; // 1MB
+const uint8_t NFT_CURRENT_VERSION 	   = 1;
+
+// Constants for NFT burn amounts
+constexpr uint64_t FIXED_BURN_AMOUNT 	   = 1000000000; // 1 GUUS in atomic units
+constexpr uint32_t BURN_PERCENT            = 10;        // Burn 15% of the transaction fee
+
+// Constants for burn amounts
+constexpr uint64_t NFT_CREATION_BURN_AMOUNT = 100000000; // 10 GUUS in atomic units
+constexpr uint64_t NFT_TRANSFER_BURN_AMOUNT = 50000000;  // 5 GUUS in atomic units
+constexpr uint8_t HF_VERSION               = 16;
+
 #define DIFFICULTY_TARGET_V2                            120  // seconds
 #define DIFFICULTY_WINDOW_V2                            60
 #define DIFFICULTY_BLOCKS_COUNT_V2                      (DIFFICULTY_WINDOW_V2 + 1) // added +1 to make N=N

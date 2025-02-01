@@ -930,6 +930,35 @@ bool add_tx_extra_nft(std::vector<uint8_t>& tx_extra,  tx_extra_nft& nft_extra) 
     add_tx_extra_field_to_tx_extra(tx_extra, field);
   }
   //---------------------------------------------------------------
+   bool add_nft_to_tx_extra(std::vector<unsigned char>& extra, const cryptonote::tx_extra_nft& nft)
+   {
+    cryptonote::tx_extra_field field = nft;
+    return add_tx_extra_field_to_tx_extra(extra, field);
+   }
+  //------------------------------------------------------------
+  bool add_nft_transfer_to_tx_extra(std::vector<unsigned char>& extra, const cryptonote::tx_extra_nft_transfer& nft_transfer)
+  {
+    cryptonote::tx_extra_field field = nft_transfer;
+    return add_tx_extra_field_to_tx_extra(extra, field);
+   }
+  //--------------------------------------------------------------
+  bool get_nft_transfer_from_tx_extra(const std::vector<uint8_t>& extra, tx_extra_nft_transfer& transfer) {
+    std::vector<cryptonote::tx_extra_field> tx_extra_fields;
+    if (!cryptonote::parse_tx_extra(extra, tx_extra_fields)) {
+        return false; // Parsing failed
+    }
+
+    // Iterate over the extra fields to find tx_extra_nft_transfer
+    for (const auto& field : tx_extra_fields) {
+        if (const auto* nft_transfer = boost::get<cryptonote::tx_extra_nft_transfer>(&field)) {
+            transfer = *nft_transfer;
+            return true; // Found the NFT transfer field
+        }
+    }
+
+    return false; // NFT transfer field not found
+   }
+  //---------------------------------------------------------------
   bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra, const std::type_info &type)
   {
     if (tx_extra.empty())

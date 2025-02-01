@@ -38,6 +38,7 @@ namespace cryptonote
     {
         nft_metadata metadata;
         crypto::hash tx_hash;
+        uint64_t nft_id;
         uint64_t output_index;
         crypto::public_key owner;
         uint64_t creation_height;

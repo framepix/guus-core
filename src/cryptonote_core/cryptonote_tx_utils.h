@@ -224,6 +224,14 @@ namespace cryptonote
     uint64_t burn_percent = 0; // 123 = 1.23x base fee.
   };
 
+struct nft_construct_tx_params {
+    uint8_t hf_version;
+    txtype tx_type = txtype::nft_transfer; // Default to nft_transfer
+    uint64_t burn_fixed;
+    uint32_t burn_percent;
+
+    nft_construct_tx_params() : tx_type(txtype::nft_transfer) {}
+   };
   //---------------------------------------------------------------
   crypto::public_key get_destination_view_key_pub(const std::vector<tx_destination_entry> &destinations, const boost::optional<cryptonote::tx_destination_entry>& change_addr);
   bool construct_tx(const account_keys& sender_account_keys, std::vector<tx_source_entry> &sources, const std::vector<tx_destination_entry>& destinations, const boost::optional<cryptonote::tx_destination_entry>& change_addr, const std::vector<uint8_t> &extra, transaction& tx, uint64_t unlock_time, const guus_construct_tx_params &tx_params = {});

@@ -115,6 +115,10 @@ namespace cryptonote
   bool get_guus_name_system_from_tx_extra(std::vector<uint8_t> const &tx_extra, tx_extra_guus_name_system &entry);
   void add_guus_name_system_to_tx_extra  (std::vector<uint8_t>       &tx_extra, tx_extra_guus_name_system const &entry);
 
+  bool add_nft_transfer_to_tx_extra(std::vector<uint8_t>& extra, const tx_extra_nft_transfer& transfer);
+  bool get_nft_transfer_from_tx_extra(const std::vector<uint8_t>& extra, tx_extra_nft_transfer& transfer);
+  bool add_nft_to_tx_extra(std::vector<uint8_t>& extra, const tx_extra_nft& nft);
+
   bool add_tx_extra_nft(std::vector<uint8_t>& tx_extra,  tx_extra_nft& nft_extra);
   std::vector<crypto::public_key> get_additional_tx_pub_keys_from_extra(const std::vector<uint8_t>& tx_extra);
   std::vector<crypto::public_key> get_additional_tx_pub_keys_from_extra(const transaction_prefix& tx);

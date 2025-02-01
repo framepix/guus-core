@@ -179,6 +179,7 @@ namespace cryptonote
     key_image_unlock,
     stake,
     guus_name_system,
+    nft_transfer,
     _count
   };
 
@@ -201,7 +202,7 @@ namespace cryptonote
     txversion version;
     txtype type;
 
-    bool is_transfer() const { return type == txtype::standard || type == txtype::stake || type == txtype::guus_name_system; }
+    bool is_transfer() const { return type == txtype::standard || type == txtype::stake || type == txtype::guus_name_system || type == txtype::nft_transfer; }
 
     // not used after version 2, but remains for compatibility
     uint64_t unlock_time;  //number of block (or time), used as a limitation like: spend this tx not early then block/time
@@ -572,10 +573,12 @@ namespace cryptonote
   inline txtype transaction_prefix::get_max_type_for_hf(uint8_t hf_version)
   {
     txtype result = txtype::standard;
-    if      (hf_version >= network_version_15)              result = txtype::guus_name_system;
+
+    if      (hf_version >= network_version_16)            result = txtype::nft_transfer;
+    else if (hf_version >= network_version_15)            result = txtype::guus_name_system;
     else if (hf_version >= network_version_14)            result = txtype::stake;
-    else if (hf_version >= network_version_11) result = txtype::key_image_unlock;
-    else if (hf_version >= network_version_9)     result = txtype::state_change;
+    else if (hf_version >= network_version_11)            result = txtype::key_image_unlock;
+    else if (hf_version >= network_version_9)             result = txtype::state_change;
 
     return result;
   }
@@ -601,6 +604,7 @@ namespace cryptonote
       case txtype::key_image_unlock:        return "key_image_unlock";
       case txtype::stake:                   return "stake";
       case txtype::guus_name_system:        return "guus_name_system";
+      case txtype::nft_transfer:            return "nft_transfer";
       default: assert(false);               return "xx_unhandled_type";
     }
   }

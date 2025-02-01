@@ -89,6 +89,11 @@ namespace cryptonote
     std::string get_command_usage(const std::vector<std::string> &args);
   private:
 
+    // NFT Commands
+    bool nft_create(const std::vector<std::string>& args);
+    bool nft_list(const std::vector<std::string>& args);
+    bool nft_transfer(const std::vector<std::string>& args);
+
     enum ResetType { ResetNone, ResetSoft, ResetHard, ResetSoftKeepKI };
 
     bool handle_command_line(const boost::program_options::variables_map& vm);
