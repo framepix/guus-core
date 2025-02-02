@@ -281,7 +281,7 @@ namespace
   const char* USAGE_LNS_PRINT_NAME_TO_OWNERS("lns_print_name_to_owners [type=<N1|all>[,<N2>...]] <name>");
 
   // NFT
-  const char* USAGE_NFT_CREATE("nft_create <id> <description> <metadata_uri> [image_path]");
+  const char* USAGE_NFT_CREATE("nft_create <id> <description>  [image_path] <metadata_uri>");
   const char* USAGE_NFT_LIST("nft_list");
   const char* USAGE_NFT_TRANSFER("transfer <nft_id> <address>");
 
@@ -6730,14 +6730,20 @@ bool simple_wallet::lns_print_owners_to_names(const std::vector<std::string>& ar
 bool simple_wallet::nft_create(const std::vector<std::string>& args)
 {
     try {
-        if (args.size() < 3) {
+        if (args.size() < 4) {
             PRINT_USAGE(USAGE_NFT_CREATE);
-            return false; // Ensure the function exits if usage is printed
+            return false;
         }
 
         uint64_t nft_id;
         if (!epee::string_tools::get_xtype_from_string(nft_id, args[0])) {
             throw std::runtime_error("Invalid NFT ID format");
+        }
+
+        // Debug output: Print all provided arguments
+        success_msg_writer() << "Arguments: ";
+        for (const auto& arg : args) {
+            success_msg_writer() << arg << " ";
         }
 
         std::vector<uint8_t> image_data;

@@ -994,7 +994,8 @@ private:
     const std::vector<uint8_t>& extra_base,
     uint32_t subaddr_account,
     std::set<uint32_t> subaddr_indices,
-    cryptonote::nft_construct_tx_params &tx_param);
+    cryptonote::nft_construct_tx_params &tx_param,
+    bool is_nft_transfer);
 
     std::vector<wallet2::pending_tx> create_transactions_all(uint64_t below, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, cryptonote::txtype tx_type = cryptonote::txtype::standard);
     std::vector<wallet2::pending_tx> create_transactions_single(const crypto::key_image &ki, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, cryptonote::txtype tx_type = cryptonote::txtype::standard);

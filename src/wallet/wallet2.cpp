@@ -7240,7 +7240,8 @@ void wallet2::create_nft(
         extra,
         0,      // subaddr_account
         {},     // subaddr_indices
-        tx_params
+        tx_params,
+        false
     );
 
     // Commit transactions
@@ -7264,6 +7265,8 @@ bool wallet2::transfer_nft(
     if (it->spent) {
         throw std::runtime_error("The NFT has already been transferred or is marked as spent.");
     }
+
+    bool is_nft_transfer = true;
 
     // Create NFT transfer transaction
     std::vector<uint8_t> extra;
@@ -7294,7 +7297,8 @@ bool wallet2::transfer_nft(
         extra,
         0,       // subaddr_account
         {},      // subaddr_indices
-        tx_params
+        tx_params,
+        is_nft_transfer
     );
 
     // Commit the transactions
@@ -11567,7 +11571,7 @@ skip_tx:
   return ptx_vector;
 }
 //--------------------------------------------------------------------------------------------
-std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, nft_construct_tx_params &tx_params)
+std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, nft_construct_tx_params &tx_params, bool is_nft_transfer)
 {
   //ensure device is let in NONE mode in any case
   hw::device &hwdev = m_account.get_device();
@@ -11583,10 +11587,10 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cr
     dsts.emplace_back(0, account_public_address{} /*address*/, false /*is_subaddress*/); // NOTE: Create a dummy dest that gets repurposed into the change output.
   }
 
-  if (is_nft_tx) // Validate NFT destinations
-  {
-    THROW_WALLET_EXCEPTION_IF(dsts.size() != 1, error::wallet_internal_error, "NFT transfer must have exactly one destination");
-  }
+    if (is_nft_transfer) {
+        THROW_WALLET_EXCEPTION_IF(dsts.size() != 1, error::wallet_internal_error, "NFT transfer must have exactly one destination");
+    }
+
 
   if(m_light_wallet) {
     // Populate m_transfers
