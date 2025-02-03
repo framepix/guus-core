@@ -251,9 +251,16 @@ bool bind_blob(sql_compiled_statement& s, I index, T&&... args)
 //
 struct blob_view {
   lokimq::string_view data;
-  /// Constructor that simply forwards anything to the `data` member constructor
-  template <typename... T> explicit blob_view(T&&... args) : data{std::forward<T>(args)...} {}
+
+  // Constructor 1: Handle raw pointer + size
+  blob_view(const void* ptr, size_t size)
+    : data{static_cast<const char*>(ptr), size} {}
+  
+  // Constructor 2: Handle string_view directly
+  explicit blob_view(lokimq::string_view sv)
+    : data{sv} {}
 };
+
 template <typename I>
 bool bind(sql_compiled_statement& s, I index, blob_view blob) {
   return bind_blob(s, index, blob.data);
@@ -1718,7 +1725,7 @@ static bool add_lns_entry(lns::name_system_db &lns_db, uint64_t height, cryptono
         switch (column_type)
         {
           case mapping_record_column::type:            bind(statement, i+1, static_cast<uint16_t>(entry.type)); break;
-          case mapping_record_column::name_hash:       bind(statement, i+1, blob_view{tx_hash.data, sizeof(tx_hash)}); //lokimq::string_view{name_hash}); break;
+          case mapping_record_column::name_hash:       bind(statement, i + 1, blob_view{name_hash}); break;
           case mapping_record_column::encrypted_value: bind(statement, i+1, blob_view{entry.encrypted_value}); break;
           case mapping_record_column::txid:            bind(statement, i+1, blob_view{tx_hash.data, sizeof(tx_hash)}); break;
           case mapping_record_column::prev_txid:       bind(statement, i+1, blob_view{entry.prev_txid.data, sizeof(entry.prev_txid)}); break;
