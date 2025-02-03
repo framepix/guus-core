@@ -933,10 +933,15 @@ gamma_picker::gamma_picker(const std::vector<uint64_t> &rct_offsets, double shap
     rct_offsets(rct_offsets)
 {
   gamma = std::gamma_distribution<double>(shape, scale);
-  THROW_WALLET_EXCEPTION_IF(rct_offsets.size() < std::max(1, CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE), error::wallet_internal_error, "Bad offset calculation");
+  THROW_WALLET_EXCEPTION_IF(
+    rct_offsets.size() < static_cast<std::vector<uint64_t>::size_type>(std::max(1, CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE)),
+    error::wallet_internal_error,
+    "Bad offset calculation"
+  );
   const size_t blocks_in_a_year = 86400 * 365 / DIFFICULTY_TARGET_V2;
   const size_t blocks_to_consider = std::min<size_t>(rct_offsets.size(), blocks_in_a_year);
-  const size_t outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ? rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
+  const size_t outputs_to_consider = rct_offsets.back() - (blocks_to_consider < rct_offsets.size() ?
+  rct_offsets[rct_offsets.size() - blocks_to_consider - 1] : 0);
   begin = rct_offsets.data();
   end = rct_offsets.data() + rct_offsets.size() - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
   num_rct_outputs = *(end - 1);
@@ -7223,7 +7228,7 @@ void wallet2::create_nft(
 
     // Get the hard fork version
     boost::optional<uint8_t> hf_version_opt = get_hard_fork_version();
-    uint8_t hf_version = hf_version_opt ? hf_version_opt.get() : cryptonote::network_version_16;
+    uint8_t hf_version = hf_version_opt ? hf_version_opt.get() : static_cast<uint8_t>(cryptonote::network_version_16);
 
     // Construct transaction parameters for NFT
     nft_construct_tx_params tx_params = wallet2::construct_nft_params(hf_version, priority, nft::nft_type::creation);
@@ -7280,7 +7285,7 @@ bool wallet2::transfer_nft(
 
     // Get the hard fork version
     boost::optional<uint8_t> hf_version_opt = get_hard_fork_version();
-    uint8_t hf_version = hf_version_opt ? hf_version_opt.get() : HF_VERSION;
+    uint8_t hf_version = hf_version_opt ? hf_version_opt.get() : static_cast<uint8_t>(cryptonote::network_version_16);
 
     // Construct transaction parameters for NFT transfer
     nft_construct_tx_params tx_params = construct_nft_params(hf_version, priority, nft::nft_type::transfer);

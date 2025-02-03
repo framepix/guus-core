@@ -32,7 +32,7 @@
 
 
 
-#include <boost/bind.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/uuid/random_generator.hpp>
 #include <boost/chrono.hpp>
 #include <boost/asio/deadline_timer.hpp>
@@ -680,7 +680,7 @@ PRAGMA_WARNING_DISABLE_VS(4355)
         reset_timer(get_default_timeout(), false);
             async_write(boost::asio::buffer(m_send_que.front().data(), size_now ) ,
                                  strand_.wrap(
-                                 boost::bind(&connection<t_protocol_handler>::handle_write, self, _1, _2)
+                                 boost::bind(&connection<t_protocol_handler>::handle_write, self, boost::placeholders::_1, boost::placeholders::_2)
                                  )
                                  );
         //_dbg3("(chunk): " << size_now);
@@ -868,7 +868,7 @@ PRAGMA_WARNING_DISABLE_VS(4355)
 		CHECK_AND_ASSERT_MES( size_now == m_send_que.front().size(), void(), "Unexpected queue size");
 		  async_write(boost::asio::buffer(m_send_que.front().data(), size_now) , 
            strand_.wrap(
-            boost::bind(&connection<t_protocol_handler>::handle_write, connection<t_protocol_handler>::shared_from_this(), _1, _2)
+            boost::bind(&connection<t_protocol_handler>::handle_write, connection<t_protocol_handler>::shared_from_this(), boost::placeholders::_1, boost::placeholders::_2)
 			  )
           );
       //_dbg3("(normal)" << size_now);
@@ -1376,7 +1376,7 @@ POP_WARNINGS
       shared_context->connect_mut.lock(); shared_context->ec = ec_; shared_context->cond.notify_one(); shared_context->connect_mut.unlock();
     };
 
-    sock_.async_connect(remote_endpoint, boost::bind<void>(connect_callback, _1, local_shared_context));
+    sock_.async_connect(remote_endpoint, boost::bind<void>(connect_callback,  boost::placeholders::_1, local_shared_context));
     while(local_shared_context->ec == boost::asio::error::would_block)
     {
       bool r = local_shared_context->cond.timed_wait(lock, boost::get_system_time() + boost::posix_time::milliseconds(conn_timeout));
