@@ -273,7 +273,7 @@ namespace config
     boost::uuids::uuid const NETWORK_ID = { {
         0x5f, 0x3a, 0x78, 0x15, 0xe1, 0x6f, 0xca, 0x21, 0x02, 0xa1, 0xdc, 0x17, 0x61, 0x64, 0x15, 0xbe,
       } }; // Bender's daydream
-  std::string const GENESIS_TX = "024001ff0402dce5a183fe030298ec315605a2e7b663779037c894a02"
+  std::string const GENESIS_TX = "023c01ff0002dce5a183fe030298ec315605a2e7b663779037c894a02"
 				 "2c418cbe72b4cc0c6a7bbdc598870d774ad85fbeb1a026b51d67fcb22"
 				 "f6775077e0f6eee0c92e4c47151ad9a1a4c20caf598d122f2da86301bd"
 				 "157953e4c8e7cfe237b8c47d9d9e70ab0a81fee94a499ac26409b2d518"
@@ -307,7 +307,7 @@ namespace config
     boost::uuids::uuid const NETWORK_ID = { {
         0xbb ,0x22, 0x9B, 0x32 , 0x04, 0x66 , 0x69, 0x10, 0x09, 0xB2, 0x32, 0x8A, 0xCC, 0xA1, 0xDF, 0x9C
       } }; // Beep Boop
-  std::string const GENESIS_TX = "023c01ff0302ecdda983fe03022d39d8f68ca242d29e2ad7fbbe375d16666ae"
+  std::string const GENESIS_TX = "023c01ff0002ecdda983fe03022d39d8f68ca242d29e2ad7fbbe375d16666ae"
 				 "8277b8bcdd3a25900c215a55cdceabafbeb1a0293fb9a76fa024bc910745da04"
                                  "10957ff46ad2bcff4ea55d74266e868f5914df163017abde30b51a1b4f7648092"
 				 "9859cc45442421bf48629d53dea56447693d288dbf01d4b4f5784868c30204032"

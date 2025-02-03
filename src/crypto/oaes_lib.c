@@ -51,6 +51,7 @@
 #include <process.h>
 #else
 #include <sys/types.h>
+ #include <sys/time.h>
 #include <unistd.h>
 #endif
 
@@ -506,18 +507,20 @@ static void oaes_get_seed( char buf[RANDSIZ + 1] )
 #else
 static uint32_t oaes_get_seed(void)
 {
-        #if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__ANDROID__) && !defined(__NetBSD__)
-	struct timeb timer;
-	struct tm *gmTimer;
-	char * _test = NULL;
-	uint32_t _ret = 0;
-	
-	ftime (&timer);
-	gmTimer = gmtime( &timer.time );
-	_test = (char *) calloc( sizeof( char ), timer.millitm );
-	_ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
-			gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + timer.millitm +
-			(uintptr_t) ( _test + timer.millitm ) + GETPID();
+
+    #if !defined(__FreeBSD__) && !defined(__OpenBSD__) && !defined(__ANDROID__) && !defined(__NetBSD__)
+    struct timeval tv;
+    struct tm *gmTimer;
+    char * _test = NULL;
+    uint32_t _ret = 0;
+
+    gettimeofday(&tv, NULL);  
+    gmTimer = gmtime(&tv.tv_sec);
+    _test = (char *) calloc(sizeof(char), tv.tv_usec / 1000);  // Convert microseconds to milliseconds
+
+    _ret = gmTimer->tm_year + 1900 + gmTimer->tm_mon + 1 + gmTimer->tm_mday +
+           gmTimer->tm_hour + gmTimer->tm_min + gmTimer->tm_sec + (tv.tv_usec / 1000) +
+           (uintptr_t)(_test + (tv.tv_usec / 1000)) + GETPID();
 	#else
 	struct timeval timer;
 	struct tm *gmTimer;
