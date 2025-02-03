@@ -124,25 +124,138 @@ static constexpr HardFork::Params mainnet_hard_forks[] =
 
 static constexpr HardFork::Params testnet_hard_forks[] =
 {
-  { network_version_7,                      1,      0, 1533631121 },
-  { network_version_8,                      2,      0, 1533631122 },
-  { network_version_9,        3,      0, 1533631123 },
-  { network_version_10,        4,      0, 1542681077 },
-  { network_version_11,    5,      0, 1551223964 },
-  { network_version_12,       75471,  0, 1561608000 }, // 2019-06-28 14:00AEDT
-  { network_version_13, 127028, 0, 1568440800 }, // 2019-09-13 16:00AEDT
-  { network_version_14,               174630, 0, 1575075600 }, // 2019-11-30 07:00UTC
-  { network_version_15,                 244777, 0, 1583940000 }, // 2020-03-11 15:20UTC
+  {
+ cryptonote::network_version_7,
+ 1,
+ 0,
+ 1728179659
+  },
+  {
+ cryptonote::network_version_8,
+  70,
+  0,
+ 1728181239
+ },
+ {
+ cryptonote::network_version_9,
+ 150,
+ 0,
+ 1728182139
+ },
+ {
+ cryptonote::network_version_10,
+ 160,
+ 0,
+ 1728182199
+ },
+ {
+ cryptonote::network_version_11,
+ 170,
+ 0,
+ 1729389409
+  },
+ {
+ cryptonote::network_version_12,
+ 171,
+ 0,
+ 1732021068
+  },
+ {
+ cryptonote::network_version_13,
+ 250,
+ 0,
+ 1732021188
+  },
+
+ {
+ cryptonote::network_version_14,
+ 260,
+ 0,
+ 1732102452
+  },
+
+ {
+ cryptonote::network_version_15,
+ 270,
+   0,
+ 1732103592
+  },
+
+  {
+ cryptonote::network_version_16,
+ 280,
+   0,
+ 1738515737
+  },
+
 };
 
 static constexpr HardFork::Params stagenet_hard_forks[] =
 {
-  { network_version_7,                   1,      0, 1341378000 },
-  { network_version_8,                   64324,  0, 1533006000 },
-  { network_version_9,     96210,  0, 1536840000 },
-  { network_version_10,     96211,  0, 1536840120 },
-  { network_version_11, 147029, 0, 1551223964 }, // 2019-02-27 12:30 AEDT
-  { network_version_12,    213125, 0, 1561608000 }, // 2019-06-28 14:00 AEDT
+  {
+ cryptonote::network_version_7,
+ 1,
+ 0,
+ 1728179659
+  },
+  {
+ cryptonote::network_version_8,
+  70,
+  0,
+ 1728181239
+ },
+ {
+ cryptonote::network_version_9,
+ 150,
+ 0,
+ 1728182139
+ },
+ {
+ cryptonote::network_version_10,
+ 160,
+ 0,
+ 1728182199
+ },
+ {
+ cryptonote::network_version_11,
+ 170,
+ 0,
+ 1729389409
+  },
+ {
+ cryptonote::network_version_12,
+ 171,
+ 0,
+ 1732021068
+  },
+ {
+ cryptonote::network_version_13,
+ 250,
+ 0,
+ 1732021188
+  },
+
+ {
+ cryptonote::network_version_14,
+ 260,
+ 0,
+ 1732102452
+  },
+
+ {
+ cryptonote::network_version_15,
+ 270,
+   0,
+ 1732103592
+  },
+
+ {
+ cryptonote::network_version_16,
+ 280,
+   0,
+ 1738515737
+  },
+
 };
 
 uint64_t HardFork::get_hardcoded_hard_fork_height(network_type nettype, cryptonote::network_version version)

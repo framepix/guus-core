@@ -123,7 +123,6 @@ constexpr uint32_t BURN_PERCENT            = 10;        // Burn 15% of the trans
 // Constants for burn amounts
 constexpr uint64_t NFT_CREATION_BURN_AMOUNT = 100000000; // 10 GUUS in atomic units
 constexpr uint64_t NFT_TRANSFER_BURN_AMOUNT = 50000000;  // 5 GUUS in atomic units
-constexpr uint8_t HF_VERSION               = 16;
 
 #define DIFFICULTY_TARGET_V2                            120  // seconds
 #define DIFFICULTY_WINDOW_V2                            60
@@ -267,21 +266,31 @@ namespace config
     uint64_t const CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 156;
     uint64_t const CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 157;
     uint64_t const CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 158;
-    uint16_t const P2P_DEFAULT_PORT = 38156;
-    uint16_t const RPC_DEFAULT_PORT = 38157;
-    uint16_t const ZMQ_RPC_DEFAULT_PORT = 38158;
-    uint16_t const QNET_DEFAULT_PORT = 38159;
+    uint16_t const P2P_DEFAULT_PORT = 31111;
+    uint16_t const RPC_DEFAULT_PORT = 32222;
+    uint16_t const ZMQ_RPC_DEFAULT_PORT = 33333;
+    uint16_t const QNET_DEFAULT_PORT = 34444;
     boost::uuids::uuid const NETWORK_ID = { {
-        0x5f, 0x3a, 0x78, 0x65, 0xe1, 0x6f, 0xca, 0xb8, 0x02, 0xa1, 0xdc, 0x17, 0x61, 0x64, 0x15, 0xbe,
+        0x5f, 0x3a, 0x78, 0x15, 0xe1, 0x6f, 0xca, 0x21, 0x02, 0xa1, 0xdc, 0x17, 0x61, 0x64, 0x15, 0xbe,
       } }; // Bender's daydream
-    std::string const GENESIS_TX = "03011e001e01ff00018080c9db97f4fb270259b546996f69aa71abe4238995f41d780ab1abebcac9f00e808f147bdb9e3228420112573af8c309b69a1a646f41b5212ba7d9c4590bf86e04f36c486467cfef9d3d72000000000000000000000000000000000000000000000000000000000000000000";
-    uint32_t const GENESIS_NONCE = 10001;
+  std::string const GENESIS_TX = "024001ff0402dce5a183fe030298ec315605a2e7b663779037c894a02"
+				 "2c418cbe72b4cc0c6a7bbdc598870d774ad85fbeb1a026b51d67fcb22"
+				 "f6775077e0f6eee0c92e4c47151ad9a1a4c20caf598d122f2da86301bd"
+				 "157953e4c8e7cfe237b8c47d9d9e70ab0a81fee94a499ac26409b2d518"
+				 "71c8012f1132ca61ab38dff00f2fea3228f24c6c71d58085b80e47e195"
+                                 "15cb27e8d0477200000000000000000000000000000000000000000000"
+				 "0000000000000000000000";
+    uint32_t const GENESIS_NONCE = 640364538;
 
     uint64_t const GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS = 1000;
     std::string const GOVERNANCE_WALLET_ADDRESS[] =
     {
-      "T6SUprTYE5rQpep9iQFxyPcKVd91DFR1fQ1Qsyqp5eYLiFc8XuYd3reRE71qDL8c3DXioUbDEpDFdaUpetnL37NS1R3rzoKxi", // hardfork v7-9
-      "T6TzkJb5EiASaCkcH7idBEi1HSrpSQJE1Zq3aL65ojBMPZvqHNYPTL56i3dncGVNEYCG5QG5zrBmRiVwcg6b1cRM1SRNqbp44", // hardfork v10
+        "T6U6yYTzq3HiykQNCMRfQM51J7EbSmJBq4xe"
+	"WWL4FBmfY3R6eWQxL8uDesMzcFFgNCMvkbGZ"
+	"wHw2yXSx3pi5Mv3N37TjeXhhK",
+        "T6U6yYTzq3HiykQNCMRfQM51J7EbSmJBq4xe"
+	"WWL4FBmfY3R6eWQxL8uDesMzcFFgNCMvkbGZ"
+	"wHw2yXSx3pi5Mv3N37TjeXhhK",
     };
 
   }
@@ -291,21 +300,32 @@ namespace config
     uint64_t const CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 24;
     uint64_t const CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 25;
     uint64_t const CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 36;
-    uint16_t const P2P_DEFAULT_PORT = 38056;
-    uint16_t const RPC_DEFAULT_PORT = 38057;
-    uint16_t const ZMQ_RPC_DEFAULT_PORT = 38058;
-    uint16_t const QNET_DEFAULT_PORT = 38059;
+    uint16_t const P2P_DEFAULT_PORT = 41111;
+    uint16_t const RPC_DEFAULT_PORT = 42222;
+    uint16_t const ZMQ_RPC_DEFAULT_PORT = 43333;
+    uint16_t const QNET_DEFAULT_PORT = 44444;
     boost::uuids::uuid const NETWORK_ID = { {
-        0xbb ,0x37, 0x9B, 0x22 , 0x0A, 0x66 , 0x69, 0x1E, 0x09, 0xB2, 0x97, 0x8A, 0xCC, 0xA1, 0xDF, 0x9C
+        0xbb ,0x22, 0x9B, 0x32 , 0x04, 0x66 , 0x69, 0x10, 0x09, 0xB2, 0x32, 0x8A, 0xCC, 0xA1, 0xDF, 0x9C
       } }; // Beep Boop
-    std::string const GENESIS_TX = "021e01ff000380808d93f5d771027e4490431900c66a6532917ad9e6a1de634a209b708f653097e7b48efc1238c68080b4ccd4dfc60302ba19a224e6474371f9161b2e6271a36d060cbdc2e479ad78f1be64c56576fa07808088fccdbcc32302bccf9c13ba1b5bb02638de6e557acdd46bf48953e42cf98a12d2ad2900cc316121018fc6728d9e3c062d3afae3b2317998d2abee1e12f51271ba1c0d3cdd236b81d200";
-    uint32_t const GENESIS_NONCE = 10002;
+  std::string const GENESIS_TX = "023c01ff0302ecdda983fe03022d39d8f68ca242d29e2ad7fbbe375d16666ae"
+				 "8277b8bcdd3a25900c215a55cdceabafbeb1a0293fb9a76fa024bc910745da04"
+                                 "10957ff46ad2bcff4ea55d74266e868f5914df163017abde30b51a1b4f7648092"
+				 "9859cc45442421bf48629d53dea56447693d288dbf01d4b4f5784868c30204032"
+				 "46717ec169ff79e26608ea126a1ab69ee77d1b167127200000000000000000000"
+				 "0000000000000000000000000000000000000000000000";
+    uint32_t const GENESIS_NONCE = 144878433;
 
     uint64_t const GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS = ((60 * 60 * 24 * 7) / DIFFICULTY_TARGET_V2);
     std::string const GOVERNANCE_WALLET_ADDRESS[] =
     {
-      "59f7FCwYMiwMnFr8HwsnfJ2hK3DYB1tryhjsfmXqEBJojKyqKeNWoaDaZaauoZPiZHUYp2wJuy5s9H96qy4q9xUVCXXHmTU", // hardfork v7-9
-      "59f7FCwYMiwMnFr8HwsnfJ2hK3DYB1tryhjsfmXqEBJojKyqKeNWoaDaZaauoZPiZHUYp2wJuy5s9H96qy4q9xUVCXXHmTU", // hardfork v10
+        "5515TLWaSJ72mVekoBZViSBkGYVm"
+	"fcaQa1gSKMqcwALNXUxpKfkcdJkL"
+	"n6cvy1q6SrcJFeXpcezkiQT4nU6P"
+	"atekUz8L8ot",
+        "5515TLWaSJ72mVekoBZViSBkGYVm"
+	"fcaQa1gSKMqcwALNXUxpKfkcdJkL"
+	"n6cvy1q6SrcJFeXpcezkiQT4nU6P"
+	"atekUz8L8ot",
     };
   }
 }

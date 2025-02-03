@@ -7223,7 +7223,7 @@ void wallet2::create_nft(
 
     // Get the hard fork version
     boost::optional<uint8_t> hf_version_opt = get_hard_fork_version();
-    uint8_t hf_version = hf_version_opt ? hf_version_opt.get() : HF_VERSION; // that will be 16
+    uint8_t hf_version = hf_version_opt ? hf_version_opt.get() : cryptonote::network_version_16;
 
     // Construct transaction parameters for NFT
     nft_construct_tx_params tx_params = wallet2::construct_nft_params(hf_version, priority, nft::nft_type::creation);
@@ -11587,8 +11587,18 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cr
     dsts.emplace_back(0, account_public_address{} /*address*/, false /*is_subaddress*/); // NOTE: Create a dummy dest that gets repurposed into the change output.
   }
 
+    // Validate destinations for NFT transfer
     if (is_nft_transfer) {
         THROW_WALLET_EXCEPTION_IF(dsts.size() != 1, error::wallet_internal_error, "NFT transfer must have exactly one destination");
+        THROW_WALLET_EXCEPTION_IF(dsts[0].amount == 0, error::wallet_internal_error, "Destination amount is zero");
+    }
+
+    // Validate and set default values for NFT creation
+    if (!is_nft_transfer) {
+        for (auto& dst : dsts) {
+            // Ensure NFT creation has zero amount destinations
+            dst.amount = 0;
+        }
     }
 
 
@@ -11611,31 +11621,37 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cr
 
     TX() : weight(0), needed_fee(0) {}
 
-    void add(const cryptonote::tx_destination_entry &de, uint64_t amount, unsigned int original_output_index, bool merge_destinations) {
-      if (merge_destinations)
-      {
-        std::vector<cryptonote::tx_destination_entry>::iterator i;
-        i = std::find_if(dsts.begin(), dsts.end(), [&](const cryptonote::tx_destination_entry &d) { return !memcmp (&d.addr, &de.addr, sizeof(de.addr)); });
-        if (i == dsts.end())
+    void add(const cryptonote::tx_destination_entry &de, uint64_t amount, unsigned int original_output_index, bool merge_destinations, bool is_nft_transfer) {
+        if (merge_destinations)
         {
-          dsts.push_back(de);
-          i = dsts.end() - 1;
-          i->amount = 0;
+            auto i = std::find_if(dsts.begin(), dsts.end(), [&](const cryptonote::tx_destination_entry &d) { return !memcmp (&d.addr, &de.addr, sizeof(de.addr)); });
+            if (i == dsts.end())
+            {
+                dsts.push_back(de);
+                i = dsts.end() - 1;
+                i->amount = 0;
+            }
+            i->amount += amount;
         }
-        i->amount += amount;
-      }
-      else
-      {
-        THROW_WALLET_EXCEPTION_IF(original_output_index > dsts.size(), error::wallet_internal_error,
-            std::string("original_output_index too large: ") + std::to_string(original_output_index) + " > " + std::to_string(dsts.size()));
-        if (original_output_index == dsts.size())
+        else
         {
-          dsts.push_back(de);
-          dsts.back().amount = 0;
+            THROW_WALLET_EXCEPTION_IF(original_output_index > dsts.size(), error::wallet_internal_error,
+                std::string("original_output_index too large: ") + std::to_string(original_output_index) + " > " + std::to_string(dsts.size()));
+            if (original_output_index == dsts.size())
+            {
+                dsts.push_back(de);
+                dsts.back().amount = 0;
+            }
+            THROW_WALLET_EXCEPTION_IF(memcmp(&dsts[original_output_index].addr, &de.addr, sizeof(de.addr)), error::wallet_internal_error, "Mismatched destination address");
+            dsts[original_output_index].amount += amount;
         }
-        THROW_WALLET_EXCEPTION_IF(memcmp(&dsts[original_output_index].addr, &de.addr, sizeof(de.addr)), error::wallet_internal_error, "Mismatched destination address");
-        dsts[original_output_index].amount += amount;
-      }
+
+        // Additional check for NFT transfers
+        if (is_nft_transfer)
+        {
+            THROW_WALLET_EXCEPTION_IF(dsts.size() != 1, error::wallet_internal_error, "NFT transfer must have exactly one destination");
+            THROW_WALLET_EXCEPTION_IF(dsts[0].amount == 0, error::wallet_internal_error, "Destination amount is zero for NFT transfer");
+        }
     }
   };
   std::vector<TX> txes;
@@ -11676,14 +11692,18 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cr
   needed_money = 0;
   for(auto& dt: dsts)
   {
-    THROW_WALLET_EXCEPTION_IF(0 == dt.amount && !is_lns_tx, error::zero_destination);
+    // For NFT transfers, the destination amount must be non-zero
+    if (is_nft_transfer) {
+      THROW_WALLET_EXCEPTION_IF(dt.amount == 0, error::zero_destination);
+    }
     needed_money += dt.amount;
-    LOG_PRINT_L2("transfer: adding " << print_money(dt.amount) << ", for a total of " << print_money (needed_money));
+    LOG_PRINT_L2("transfer: adding " << print_money(dt.amount) << ", for a total of " << print_money(needed_money));
     THROW_WALLET_EXCEPTION_IF(needed_money < dt.amount, error::tx_sum_overflow, dsts, 0, m_nettype);
   }
 
   // throw if attempting a transaction with no money
-  THROW_WALLET_EXCEPTION_IF(needed_money == 0 && !is_lns_tx && !is_nft_tx, error::zero_destination);
+  // Allow zero amount for NFT creation but not for NFT transfers
+  THROW_WALLET_EXCEPTION_IF(needed_money == 0 && !is_lns_tx && !is_nft_transfer, error::zero_destination);
 
   std::map<uint32_t, std::pair<uint64_t, uint64_t>> unlocked_balance_per_subaddr = unlocked_balance_per_subaddress(subaddr_account);
   std::map<uint32_t, uint64_t> balance_per_subaddr = balance_per_subaddress(subaddr_account);
@@ -11694,11 +11714,11 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cr
       subaddr_indices.insert(i.first);
   }
 
-  // early out if we know we can't make it anyway
-  // we could also check for being within FEE_PER_KB, but if the fee calculation
-  // ever changes, this might be missed, so let this go through
-    const uint64_t num_outputs = (is_lns_tx || is_nft_tx) ? 1 : 2;
-  {
+    // early out if we know we can't make it anyway
+    // we could also check for being within FEE_PER_KB, but if the fee calculation
+    // ever changes, this might be missed, so let this go through
+    const uint64_t num_outputs = (is_lns_tx || is_nft_transfer) ? 1 : 2;
+    {
     uint64_t min_fee = (
         base_fee.first * estimate_rct_tx_size(1, fake_outs_count, num_outputs, extra.size()) +
         base_fee.second * num_outputs
@@ -11708,15 +11728,19 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cr
     uint64_t unlocked_balance_subtotal = 0;
     for (uint32_t index_minor : subaddr_indices)
     {
-      balance_subtotal += balance_per_subaddr[index_minor];
-      unlocked_balance_subtotal += unlocked_balance_per_subaddr[index_minor].first;
+        balance_subtotal += balance_per_subaddr[index_minor];
+        unlocked_balance_subtotal += unlocked_balance_per_subaddr[index_minor].first;
     }
+
+    // Throw if we don't have enough overall balance
     THROW_WALLET_EXCEPTION_IF(needed_money + min_fee + fixed_fee > balance_subtotal, error::not_enough_money,
-      balance_subtotal, needed_money, 0);
-    // first check overall balance is enough, then unlocked one, so we throw distinct exceptions
+        balance_subtotal, needed_money, 0);
+
+    // First check overall balance is enough, then unlocked one, so we throw distinct exceptions
     THROW_WALLET_EXCEPTION_IF(needed_money + min_fee + fixed_fee > unlocked_balance_subtotal, error::not_enough_unlocked_money,
         unlocked_balance_subtotal, needed_money, 0);
-  }
+   }
+
 
   for (uint32_t i : subaddr_indices)
     LOG_PRINT_L2("Candidate subaddress index for spending: " << i);
@@ -11930,23 +11954,22 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(std::vector<cr
     }
     else
     {
-      while (!dsts.empty() && dsts[0].amount <= available_amount && estimate_tx_weight(tx.selected_transfers.size(), fake_outs_count, tx.dsts.size()+1, extra.size()) < TX_WEIGHT_TARGET(upper_transaction_weight_limit))
-      {
-        // we can fully pay that destination
-        LOG_PRINT_L2("We can fully pay " << get_account_address_as_str(m_nettype, dsts[0].is_subaddress, dsts[0].addr) <<
-          " for " << print_money(dsts[0].amount));
-        tx.add(dsts[0], dsts[0].amount, original_output_index, m_merge_destinations);
-        available_amount -= dsts[0].amount;
-        dsts[0].amount = 0;
-        pop_index(dsts, 0);
-        ++original_output_index;
-      }
-
+    while (!dsts.empty() && dsts[0].amount <= available_amount && estimate_tx_weight(tx.selected_transfers.size(), fake_outs_count, tx.dsts.size()+1, extra.size()) < TX_WEIGHT_TARGET(upper_transaction_weight_limit))
+  {
+    // we can fully pay that destination
+    LOG_PRINT_L2("We can fully pay " << get_account_address_as_str(m_nettype, dsts[0].is_subaddress, dsts[0].addr) <<
+      " for " << print_money(dsts[0].amount));
+    tx.add(dsts[0], dsts[0].amount, original_output_index, m_merge_destinations, is_nft_transfer);
+    available_amount -= dsts[0].amount;
+    dsts[0].amount = 0;
+    pop_index(dsts, 0);
+    ++original_output_index;
+    }
       if (available_amount > 0 && !dsts.empty() && estimate_tx_weight(tx.selected_transfers.size(), fake_outs_count, tx.dsts.size()+1, extra.size()) < TX_WEIGHT_TARGET(upper_transaction_weight_limit)) {
         // we can partially fill that destination
         LOG_PRINT_L2("We can partially pay " << get_account_address_as_str(m_nettype, dsts[0].is_subaddress, dsts[0].addr) <<
           " for " << print_money(available_amount) << "/" << print_money(dsts[0].amount));
-        tx.add(dsts[0], available_amount, original_output_index, m_merge_destinations);
+        tx.add(dsts[0], available_amount, original_output_index, m_merge_destinations, is_nft_transfer);
         dsts[0].amount -= available_amount;
         available_amount = 0;
       }
