@@ -6803,6 +6803,7 @@ bool simple_wallet::nft_transfer(const std::vector<std::string>& args)
     try {
         if (args.size() < 2) {
          PRINT_USAGE(USAGE_NFT_TRANSFER);
+            return false;
         }
         
         uint64_t nft_id;

@@ -273,13 +273,11 @@ namespace config
     boost::uuids::uuid const NETWORK_ID = { {
         0x5f, 0x3a, 0x78, 0x15, 0xe1, 0x6f, 0xca, 0x21, 0x02, 0xa1, 0xdc, 0x17, 0x61, 0x64, 0x15, 0xbe,
       } }; // Bender's daydream
-  std::string const GENESIS_TX = "023c01ff0002dce5a183fe030298ec315605a2e7b663779037c894a02"
-				 "2c418cbe72b4cc0c6a7bbdc598870d774ad85fbeb1a026b51d67fcb22"
-				 "f6775077e0f6eee0c92e4c47151ad9a1a4c20caf598d122f2da86301bd"
-				 "157953e4c8e7cfe237b8c47d9d9e70ab0a81fee94a499ac26409b2d518"
-				 "71c8012f1132ca61ab38dff00f2fea3228f24c6c71d58085b80e47e195"
-                                 "15cb27e8d0477200000000000000000000000000000000000000000000"
-				 "0000000000000000000000";
+  std::string const GENESIS_TX = "023c01ff0002b09dddb0b20302b402e8227b015ec3b5e80a95133fda4eb0189ca654b25a12c1"
+                                 "0d991fbaf71fc5fba9adee16024e05aca10f674c227f002cffb353db47777b6ec70fbd122a3b"
+                                 "d568ae9e31298263018c653c980b16b7074cd02b70c98b72887fa3cb07f233d815e5a26363ee"
+                                 "030fbb0158666666666666666666666666666666666666666666666666666666666666667200"
+                                 "0000000000000000000000000000000000000000000000000000000000000000";
     uint32_t const GENESIS_NONCE = 640364538;
 
     uint64_t const GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS = 1000;
