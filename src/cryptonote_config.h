@@ -262,21 +262,29 @@ namespace config
     uint64_t const CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 156;
     uint64_t const CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 157;
     uint64_t const CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 158;
-    uint16_t const P2P_DEFAULT_PORT = 38156;
-    uint16_t const RPC_DEFAULT_PORT = 38157;
-    uint16_t const ZMQ_RPC_DEFAULT_PORT = 38158;
-    uint16_t const QNET_DEFAULT_PORT = 38159;
+    uint16_t const P2P_DEFAULT_PORT = 31111;
+    uint16_t const RPC_DEFAULT_PORT = 32222;
+    uint16_t const ZMQ_RPC_DEFAULT_PORT = 33333;
+    uint16_t const QNET_DEFAULT_PORT = 34444;
     boost::uuids::uuid const NETWORK_ID = { {
-        0x5f, 0x3a, 0x78, 0x65, 0xe1, 0x6f, 0xca, 0xb8, 0x02, 0xa1, 0xdc, 0x17, 0x61, 0x64, 0x15, 0xbe,
+        0x5f, 0x3a, 0x78, 0x15, 0xe1, 0x6f, 0xca, 0x21, 0x02, 0xa1, 0xdc, 0x17, 0x61, 0x64, 0x15, 0xbe,
       } }; // Bender's daydream
-    std::string const GENESIS_TX = "03011e001e01ff00018080c9db97f4fb270259b546996f69aa71abe4238995f41d780ab1abebcac9f00e808f147bdb9e3228420112573af8c309b69a1a646f41b5212ba7d9c4590bf86e04f36c486467cfef9d3d72000000000000000000000000000000000000000000000000000000000000000000";
-    uint32_t const GENESIS_NONCE = 10001;
+  std::string const GENESIS_TX = "023c01ff0002b09dddb0b20302b402e8227b015ec3b5e80a95133fda4eb0189ca654b25a12c1"
+                                 "0d991fbaf71fc5fba9adee16024e05aca10f674c227f002cffb353db47777b6ec70fbd122a3b"
+                                 "d568ae9e31298263018c653c980b16b7074cd02b70c98b72887fa3cb07f233d815e5a26363ee"
+                                 "030fbb0158666666666666666666666666666666666666666666666666666666666666667200"
+                                 "0000000000000000000000000000000000000000000000000000000000000000";
+    uint32_t const GENESIS_NONCE = 640364538;
 
     uint64_t const GOVERNANCE_REWARD_INTERVAL_IN_BLOCKS = 1000;
     std::string const GOVERNANCE_WALLET_ADDRESS[] =
     {
-      "T6SUprTYE5rQpep9iQFxyPcKVd91DFR1fQ1Qsyqp5eYLiFc8XuYd3reRE71qDL8c3DXioUbDEpDFdaUpetnL37NS1R3rzoKxi", // hardfork v7-9
-      "T6TzkJb5EiASaCkcH7idBEi1HSrpSQJE1Zq3aL65ojBMPZvqHNYPTL56i3dncGVNEYCG5QG5zrBmRiVwcg6b1cRM1SRNqbp44", // hardfork v10
+        "T6U6yYTzq3HiykQNCMRfQM51J7EbSmJBq4xe"
+	"WWL4FBmfY3R6eWQxL8uDesMzcFFgNCMvkbGZ"
+	"wHw2yXSx3pi5Mv3N37TjeXhhK",
+        "T6U6yYTzq3HiykQNCMRfQM51J7EbSmJBq4xe"
+	"WWL4FBmfY3R6eWQxL8uDesMzcFFgNCMvkbGZ"
+	"wHw2yXSx3pi5Mv3N37TjeXhhK",
     };
 
   }

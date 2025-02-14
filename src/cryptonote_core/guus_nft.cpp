@@ -43,7 +43,7 @@ void create_nft_with_address(sqlite3* db,
                              uint64_t nft_id,
                              const std::vector<uint8_t>& encrypted_address,
                              const std::string& utility_data,
-                             const std::vector<uint8_t>& image_data,
+                           //  const std::vector<uint8_t>& image_data,
                              const crypto::hash& image_hash,
                              uint64_t block_height) {
     if (name.empty() || description.empty() || encrypted_address.empty()) {
@@ -61,7 +61,7 @@ void create_nft_with_address(sqlite3* db,
     nft.nft_id = nft_id;
     nft.utility_data = utility_data;
     nft.encrypted_address = encrypted_address;
-    nft.image_data = image_data;  // Add image data to the NFT metadata
+    //nft.image_data = image_data;  // Add image data to the NFT metadata
     nft.image_hash = image_hash;  // Add image hash to the NFT metadata
     nft.block_height = block_height; // Associate with block height
 
@@ -88,7 +88,7 @@ void get_nft_details(sqlite3* db, uint64_t nft_id, uint64_t block_height) {
                   << "ID: " << nft.nft_id << "\n"
                   << "Utility Data: " << nft.utility_data << "\n"
                   << "Encrypted Address: " << tools::type_to_hex(nft.encrypted_address) << "\n"
-                  << "Image Size: " << nft.image_data.size() << " bytes\n"
+//                  << "Image Size: " << nft.image_data.size() << " bytes\n"
                   << "Image Hash: " << epee::string_tools::pod_to_hex(nft.image_hash) << "\n"
                   << "Block Height: " << nft.block_height << std::endl;
     } catch (const std::exception& e) {
@@ -184,7 +184,6 @@ void nft_db_management::initialize_nft_database(sqlite3* db) {
             nft_blob BLOB NOT NULL,
             encrypted_address BLOB NOT NULL,
             block_height INTEGER NOT NULL,
-            image_data BLOB,                -- Column for storing image data
             image_hash BLOB                 -- Column for storing image hash
         );
     )";
@@ -212,7 +211,7 @@ void nft_db_management::apply_migrations(sqlite3* db) {
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         std::string column_name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         if (column_name == "utility_data") has_utility_data = true;
-        if (column_name == "image_data") has_image_data = true;
+       // if (column_name == "image_data") has_image_data = true;
         if (column_name == "image_hash") has_image_hash = true;
     }
     sqlite3_finalize(stmt);
@@ -229,7 +228,7 @@ void nft_db_management::apply_migrations(sqlite3* db) {
         MINFO("Added utility_data column to nft_data table.");
     }
 
-    if (!has_image_data) {
+   /* if (!has_image_data) {
         const char* sql_add_column = "ALTER TABLE nft_data ADD COLUMN image_data BLOB;";
         char* err_msg = nullptr;
         if (sqlite3_exec(db, sql_add_column, nullptr, nullptr, &err_msg) != SQLITE_OK) {
@@ -239,7 +238,7 @@ void nft_db_management::apply_migrations(sqlite3* db) {
             throw std::runtime_error(error);
         }
         MINFO("Added image_data column to nft_data table.");
-    }
+    }*/
 
     if (!has_image_hash) {
         const char* sql_add_column = "ALTER TABLE nft_data ADD COLUMN image_hash BLOB;";

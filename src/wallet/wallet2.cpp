@@ -87,7 +87,7 @@ using namespace epee;
 #include "common/guus_integration_test_hooks.h"
 #include "lns.h"
 #include "string_coding.h"
-
+#include "cryptonote_core/guus_nftdb.h"
 extern "C"
 {
 #include "crypto/keccak.h"
@@ -10524,6 +10524,97 @@ static constexpr uint64_t BURN_FEE_PLACEHOLDER = (1ULL << (6*7)) - 1;
 // This system allows for sending (almost) the entire balance, since it does
 // not generate spurious change in all txes, thus decreasing the instantaneous
 // usable balance.
+//-------------------------------------------------------------------------
+void wallet2::transfer_selected_rct_nft(
+    const cryptonote::tx_destination_entry &recipient, // Single NFT recipient
+    const uint64_t unlock_time,
+    const std::vector<uint8_t>& extra, // NFT metadata in extra
+    cryptonote::transaction &tx,
+    wallet2::pending_tx &ptx)
+{
+    // Ensure device is in NONE mode
+    hw::device &hwdev = m_account.get_device();
+    boost::unique_lock<hw::device> hwdev_lock(hwdev);
+    hw::reset_mode rst(hwdev);
+
+    LOG_PRINT_L1("Constructing NFT transaction...");
+
+    std::vector<cryptonote::tx_source_entry> sources;
+    std::vector<cryptonote::tx_destination_entry> destinations = {recipient};
+    cryptonote::tx_destination_entry change_dst;
+
+
+    // Populate pending_tx struct
+    ptx.tx = tx;
+    ptx.fee = 0;  // No fee for minting NFTs
+    ptx.dust = 0;
+    ptx.change_dts = change_dst;
+    ptx.selected_transfers.clear();
+    ptx.key_images.clear();
+    //ptx.tx_key = cryptonote::keypair::generate().sec;
+    ptx.dests = destinations;
+    ptx.construction_data.sources = sources;
+    ptx.construction_data.change_dts = change_dst;
+    ptx.construction_data.splitted_dsts = destinations;
+    ptx.construction_data.selected_transfers = ptx.selected_transfers;
+    ptx.construction_data.extra = extra;
+    ptx.construction_data.unlock_time = unlock_time;
+
+    LOG_PRINT_L1("NFT Transaction successfully constructed: " << get_transaction_hash(tx));
+}
+
+//-------------------------------------------------------------------------------
+std::vector<wallet2::pending_tx> wallet2::create_transactions_nft(
+    const cryptonote::tx_destination_entry &recipient,  // Single recipient for NFT
+    const uint64_t unlock_time, 
+    uint32_t priority, 
+    const std::vector<uint8_t>& extra_base, 
+    uint32_t subaddr_account, 
+    std::set<uint32_t> subaddr_indices,
+    const tx_extra_nft_metadata &nft_metadata) // NFT metadata passed directly
+{
+    // Ensure device is in NONE mode in any case
+    hw::device &hwdev = m_account.get_device();
+    boost::unique_lock<hw::device> hwdev_lock(hwdev);
+    hw::reset_mode rst(hwdev);  
+
+    std::vector<wallet2::pending_tx> ptx_vector;
+    std::vector<uint8_t> extra = extra_base;
+
+    bool is_minting = !nft_metadata.metadata.image_data.empty(); // Minting if image exists
+
+    if (is_minting)
+    {
+        LOG_PRINT_L1("Minting new NFT: " << nft_metadata.metadata.nft_name);
+    }
+    else
+    {
+        LOG_PRINT_L1("Transferring NFT ID: " << nft_metadata.metadata.nft_id);
+    }
+
+    // Serialize NFT metadata and append to extra
+    std::vector<uint8_t> nft_extra_data = nft_metadata.to_bytes();
+    extra.insert(extra.end(), nft_extra_data.begin(), nft_extra_data.end());
+
+    // Create transaction
+    cryptonote::transaction test_tx;
+    pending_tx test_ptx;
+
+    transfer_selected_rct_nft(
+        recipient,             // Single NFT recipient
+        unlock_time, 
+        extra,                 // NFT metadata in extra
+        test_tx, 
+        test_ptx
+    );
+
+    // Store transaction
+    ptx_vector.push_back(test_ptx);
+    LOG_PRINT_L1("NFT Transaction Created: " << get_transaction_hash(test_tx));
+
+    return ptx_vector;
+}
+//--------------------------------------------------------------------------------------------
 std::vector<wallet2::pending_tx> wallet2::create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, guus_construct_tx_params &tx_params)
 {
   //ensure device is let in NONE mode in any case

@@ -571,7 +571,7 @@ struct nft_metadata
         write_string(ss, nft_description);
         write_vector(ss, encrypted_address);
         write_string(ss, utility_data);
-        write_vector(ss, image_data);       // Serialize image data
+        //write_vector(ss, image_data);       // Serialize image data
         ss.write(reinterpret_cast<const char*>(&image_hash), sizeof(image_hash)); // Serialize image hash
         std::string temp = ss.str();
         return std::vector<uint8_t>(temp.begin(), temp.end());
@@ -587,7 +587,7 @@ struct nft_metadata
         result.nft_description = read_string(iss);
         result.encrypted_address = read_vector<uint8_t>(iss);
         result.utility_data = read_string(iss);
-        result.image_data = read_vector<uint8_t>(iss); // Deserialize image data
+       // result.image_data = read_vector<uint8_t>(iss); // Deserialize image data
         iss.read(reinterpret_cast<char*>(&result.image_hash), sizeof(result.image_hash)); // Deserialize image hash
         return result;
     }
@@ -646,7 +646,7 @@ struct tx_extra_nft_metadata
         FIELD(metadata.nft_id)
         FIELD(metadata.encrypted_address)
         FIELD(metadata.utility_data)
-        FIELD(metadata.image_data) // Serialize image data
+       // FIELD(metadata.image_data) // Serialize image data
         FIELD(metadata.image_hash) // Serialize image hash
         FIELD(metadata.block_height)
     END_SERIALIZE()

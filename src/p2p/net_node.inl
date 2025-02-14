@@ -579,11 +579,11 @@ namespace nodetool
     std::set<std::string> full_addrs;
     if (nettype == cryptonote::TESTNET)
     {
-      full_addrs.insert("159.69.109.145:38156");
+      full_addrs.insert("85.31.237.246:31111");
     }
     else if (nettype == cryptonote::STAGENET)
     {
-      full_addrs.insert("159.69.109.145:38153");
+      full_addrs.insert("85.31.237.246:31111");
     }
     else if (nettype == cryptonote::FAKECHAIN)
     {

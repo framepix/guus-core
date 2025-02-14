@@ -6067,7 +6067,7 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
     }
     description = description.substr(0, description.size() - 1); // Trim trailing space
     std::string utility_data = args[args.size() - 2];
-    std::string png_filename = args[args.size() - 1]; // Expecting only the filename without path
+    std::string png_filename = args[args.size() - 1];
 
     // Define paths
     fs::path home(getenv("HOME"));
@@ -6083,12 +6083,12 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
     }
 
     try {
-        // Check if the PNG file exists
+        // Check if PNG file exists
         if (!fs::exists(png_path)) {
             throw std::runtime_error("PNG file '" + png_filename + "' does not exist in ~/.Bitguus/.");
         }
 
-        // Load and validate PNG image
+        // Load PNG image
         std::vector<uint8_t> png_data;
         std::ifstream file(png_path, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
@@ -6102,8 +6102,8 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
         }
         file.close();
 
-        // Resize PNG using Cairo
-        std::vector<uint8_t> resized_png = resize_png(png_data, 128, 128); // Reduce to 512x512
+        // Resize PNG using Cairo (resize to 128x128 for consistency)
+        std::vector<uint8_t> resized_png = resize_png(png_data, 128, 128);
         if (resized_png.empty()) {
             throw std::runtime_error("Failed to resize PNG.");
         }
@@ -6119,30 +6119,39 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
 
         uint64_t block_height = m_wallet->get_blockchain_current_height();
 
-        // Create table if it does not exist
-        const char* sql = "CREATE TABLE IF NOT EXISTS nft_data ("
-                          "nft_id INTEGER PRIMARY KEY, "
-                          "nft_name TEXT NOT NULL, "
-                          "nft_description TEXT NOT NULL, "
-                          "nft_blob BLOB NOT NULL, "
-                          "encrypted_address BLOB NOT NULL, "
-                          "block_height INTEGER NOT NULL, "
-                          "image_data BLOB, "
-                          "image_hash BLOB);";
-
-        char* err_msg = nullptr;
-        if (sqlite3_exec(db, sql, nullptr, nullptr, &err_msg) != SQLITE_OK) {
-            std::string error = "Failed to create table: ";
-            error += err_msg;
-            sqlite3_free(err_msg);
-            throw std::runtime_error(error);
-        }
-
         // Compute image hash
         crypto::hash image_hash = crypto::cn_fast_hash(resized_png.data(), resized_png.size());
 
-        // Store NFT in database
-        create_nft_with_address(db, name, description, nft_id, encrypted_address, utility_data, resized_png, image_hash, block_height);
+        // Store NFT in SQLite database (image_data is **only** stored in `nft.db`)
+        create_nft_with_address(
+            db, name, description, nft_id, encrypted_address, utility_data,  image_hash, block_height
+        );
+
+        // Prepare NFT metadata for blockchain transaction (without `image_data`)
+        tx_extra_nft_metadata nft_metadata;
+        nft_metadata.metadata.nft_name = name;
+        nft_metadata.metadata.nft_description = description;
+        nft_metadata.metadata.nft_id = nft_id;
+        nft_metadata.metadata.encrypted_address = encrypted_address;
+        nft_metadata.metadata.utility_data = utility_data;
+        nft_metadata.metadata.image_hash = image_hash;
+        nft_metadata.metadata.block_height = block_height;
+
+        // Prepare recipient
+        cryptonote::tx_destination_entry recipient(0, m_wallet->get_address(), false);
+
+        // Create NFT transaction
+        auto ptx_vector = m_wallet->create_transactions_nft(
+            recipient, 0, 0, {}, m_wallet->get_num_subaddress_accounts(), {}, nft_metadata
+        );
+
+        // Submit transaction
+       try {
+         m_wallet->commit_tx(ptx_vector, 0); // Commit the transaction
+       } catch (const std::exception &e) {
+        throw std::runtime_error(std::string("Failed to send NFT transaction: ") + e.what());
+     }
+
 
         success_msg_writer() << "NFT created successfully: " << name << " (ID: " << nft_id << ")";
         success_msg_writer() << "Image Hash: " << epee::string_tools::pod_to_hex(image_hash);
