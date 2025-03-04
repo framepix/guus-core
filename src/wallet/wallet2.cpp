@@ -10496,19 +10496,19 @@ std::vector<tools::wallet2::pending_tx> wallet2::create_transactions_nft(
     uint32_t priority,
     const std::set<uint32_t>& subaddr_indices,
     const uint32_t subaddr_account,
-     tx_extra_nft_metadata& nft_metadata)
+    const tx_extra_nft_metadata& nft_metadata)
 {
     hw::device& hwdev = m_account.get_device();
     boost::unique_lock<hw::device> hwdev_lock(hwdev);
     hw::reset_mode rst(hwdev);
 
-    const uint64_t FIXED_AMOUNT = 1000;
+    const uint64_t FIXED_AMOUNT = 10000; 
     cryptonote::tx_destination_entry recipient = dst;
-    recipient.amount = FIXED_AMOUNT; // Override with non-zero amount
+    recipient.amount = FIXED_AMOUNT;
     std::vector<cryptonote::tx_destination_entry> dsts = {recipient};
 
     std::vector<uint8_t> extra;
-    add_tx_extra(extra, nft_metadata);
+    add_tx_extra(extra, nft_metadata.metadata);
 
     if (m_light_wallet) {
         light_wallet_get_unspent_outs();
@@ -10535,9 +10535,8 @@ std::vector<tools::wallet2::pending_tx> wallet2::create_transactions_nft(
     uint64_t upper_transaction_weight_limit = get_upper_transaction_weight_limit();
     bool adding_fee = false;
 
-    const uint64_t num_outputs = 2; // Payment output + change
+    const uint64_t num_outputs = 2;
 
-    // Balance checks with non-zero amount
     std::map<uint32_t, std::pair<uint64_t, uint64_t>> unlocked_balance_per_subaddr = unlocked_balance_per_subaddress(subaddr_account);
     std::map<uint32_t, uint64_t> balance_per_subaddr = balance_per_subaddress(subaddr_account);
     std::set<uint32_t> effective_subaddr_indices = subaddr_indices.empty() ? std::set<uint32_t>{} : subaddr_indices;
@@ -10559,7 +10558,6 @@ std::vector<tools::wallet2::pending_tx> wallet2::create_transactions_nft(
     THROW_WALLET_EXCEPTION_IF(needed_money + min_fee > unlocked_balance_subtotal, error::not_enough_unlocked_money,
         unlocked_balance_subtotal, needed_money, min_fee);
 
-    // Gather unspent outputs
     std::vector<std::pair<uint32_t, std::vector<size_t>>> unused_transfers_indices_per_subaddr;
     std::vector<std::pair<uint32_t, std::vector<size_t>>> unused_dust_indices_per_subaddr;
     size_t num_nondust_outputs = 0, num_dust_outputs = 0;
@@ -10625,7 +10623,6 @@ std::vector<tools::wallet2::pending_tx> wallet2::create_transactions_nft(
         needed_fee = estimate_fee(tx.selected_transfers.size(), fake_outs_count, num_outputs, extra.size(),
                                   base_fee, fee_percent, 0, fee_quantization_mask);
 
-        // Adjust destination amount and add change
         uint64_t input_total = available_for_fee;
         if (input_total >= needed_money + needed_fee) {
             if (tx.dsts[0].amount > 0) {
@@ -10633,13 +10630,12 @@ std::vector<tools::wallet2::pending_tx> wallet2::create_transactions_nft(
                 remaining_amount -= tx.dsts[0].amount;
             }
             if (input_total > needed_money + needed_fee) {
-                tx.dsts.push_back({input_total - needed_money - needed_fee, dst.addr, false}); // Change output
+                tx.dsts.push_back({input_total - needed_money - needed_fee, dst.addr, false});
             }
 
             cryptonote::transaction test_tx;
             pending_tx test_ptx;
-            boost::optional<uint8_t> hf_version = get_hard_fork_version();
-            guus_construct_tx_params tx_params{*hf_version, txtype::standard, 0, 0}; // Standard tx type
+            guus_construct_tx_params tx_params{txtype::standard, get_current_hard_fork(), 0, 0};
             transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, tx.outs, unlock_time, needed_fee, extra,
                                   test_tx, test_ptx, rct_config, tx_params);
             std::string tx_blob = t_serializable_object_to_blob(test_ptx.tx);
@@ -10670,19 +10666,48 @@ std::vector<tools::wallet2::pending_tx> wallet2::create_transactions_nft(
 
     hwdev.set_mode(hw::device::TRANSACTION_CREATE_REAL);
     TX& tx = txes[0];
-            boost::optional<uint8_t> hf_version = get_hard_fork_version();
-            guus_construct_tx_params tx_params{*hf_version, txtype::standard, 0, 0}; // Standard tx type
+    guus_construct_tx_params tx_params{txtype::standard, get_current_hard_fork(), 0, 0};
     transfer_selected_rct(tx.dsts, tx.selected_transfers, fake_outs_count, tx.outs, unlock_time, tx.needed_fee, extra,
                           tx.tx, tx.ptx, rct_config, tx_params);
-    std::string tx_blob = t_serializable_object_to_blob(tx.ptx.tx);
-    tx.weight = get_transaction_weight(tx.tx, tx_blob.size());
 
+    // Fully populate ptx to match transfer_selected_rct
+    std::string key_images;
+    bool all_are_txin_to_key = std::all_of(tx.tx.vin.begin(), tx.tx.vin.end(), [&](const cryptonote::txin_v& s_e) -> bool {
+        CHECKED_GET_SPECIFIC_VARIANT(s_e, const cryptonote::txin_to_key, in, false);
+        key_images += boost::to_string(in.k_image) + " ";
+        return true;
+    });
+    THROW_WALLET_EXCEPTION_IF(!all_are_txin_to_key, error::unexpected_txin_type, tx.tx);
+
+    std::vector<size_t> ins_order(tx.selected_transfers.size());
+    std::iota(ins_order.begin(), ins_order.end(), 0); // Simple order for now; permutation handled in sign_tx if needed
+
+    tx.ptx.key_images = key_images;
     tx.ptx.fee = tx.needed_fee;
     tx.ptx.dust = 0;
     tx.ptx.dust_added_to_fee = false;
-    tx.ptx.change_dts = tx.dsts.size() > 1 ? tx.dsts[1] : tx_destination_entry{0, dst.addr, false};
+    tx.ptx.tx = tx.tx;
+    tx.ptx.change_dts = tx.dsts.size() > 1 ? tx.dsts[1] : cryptonote::tx_destination_entry{0, dst.addr, false};
     tx.ptx.selected_transfers = tx.selected_transfers;
-    tx.ptx.dests = {dst}; // Original destination without change
+    tools::apply_permutation(ins_order, tx.ptx.selected_transfers); // Match transfer_selected_rct
+    tx.ptx.dests = {dst};
+    tx.ptx.tx_key = rct::rct2sk(rct::identity()); // Placeholder; set by sign_tx
+    tx.ptx.additional_tx_keys = {};
+    tx.ptx.multisig_sigs = {}; // Add multisig support if needed
+    tx.ptx.construction_data.sources = {}; // Populated in transfer_selected_rct
+    tx.ptx.construction_data.change_dts = tx.ptx.change_dts;
+    tx.ptx.construction_data.splitted_dsts = tx.dsts;
+    tx.ptx.construction_data.selected_transfers = tx.selected_transfers;
+    tx.ptx.construction_data.extra = extra;
+    tx.ptx.construction_data.unlock_time = unlock_time;
+    tx.ptx.construction_data.tx_type = tx_params.tx_type;
+    tx.ptx.construction_data.hf_version = tx_params.hf_version;
+    tx.ptx.construction_data.rct_config = rct_config;
+    tx.ptx.construction_data.dests = {dst};
+    tx.ptx.construction_data.subaddr_account = subaddr_account;
+    tx.ptx.construction_data.subaddr_indices.clear();
+    for (size_t idx : tx.selected_transfers)
+        tx.ptx.construction_data.subaddr_indices.insert(m_transfers[idx].m_subaddr_index.minor);
 
     std::vector<pending_tx> ptx_vector = {tx.ptx};
     LOG_PRINT_L1("Created NFT transaction: " << get_transaction_hash(tx.ptx.tx) << ", weight: " << tx.weight
