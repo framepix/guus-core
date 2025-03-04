@@ -9720,6 +9720,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     crypto::secret_key tx_key;
     std::vector<crypto::secret_key> additional_tx_keys;
     rct::multisig_out msout;
+    auto sources_copy = sources;
     LOG_PRINT_L2("Constructing tx with sources: " << sources.size() << ", dests: " << splitted_dsts.size() << ", fee: " << print_money(fee));
     bool r = cryptonote::construct_tx_and_get_tx_key(m_account.get_keys(), m_subaddresses, sources, splitted_dsts, change_dts, extra, tx, unlock_time, tx_key, additional_tx_keys, rct_config, m_multisig ? &msout : NULL, tx_params);
     if (!r) {
