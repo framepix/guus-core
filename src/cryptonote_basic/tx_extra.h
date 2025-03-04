@@ -37,6 +37,9 @@
 #include <boost/variant.hpp>
 #include "lns.h"
 #include "cryptonote_basic.h"
+#include "storages/portable_storage_template_helper.h"
+#include "serialization/keyvalue_serialization.h"
+#include "cryptonote_basic/verification_context.h"
 
 
 #define TX_EXTRA_PADDING_MAX_COUNT              255
@@ -650,7 +653,9 @@ struct tx_extra_nft_metadata
         FIELD(metadata.image_hash) // Serialize image hash
         FIELD(metadata.block_height)
     END_SERIALIZE()
+
 };
+
 
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;

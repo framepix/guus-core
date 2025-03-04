@@ -734,6 +734,16 @@ namespace cryptonote
   }
 
   //---------------------------------------------------------------
+  // Assuming nft_metadata is some struct or data type with a known size
+  void add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, nft_metadata& nft_metadata) {
+    std::vector<uint8_t> serialized = nft_metadata.to_bytes();
+    add_data_to_tx_extra(tx_extra, reinterpret_cast<const char*>(serialized.data()), serialized.size(), TX_EXTRA_TAG_NFT_METADATA);
+   }
+  // Wrapper function (if needed)
+   void add_tx_extra(std::vector<uint8_t>& extra, tx_extra_nft_metadata& nft_metadata) {
+    add_nft_metadata_to_tx_extra(extra, nft_metadata.metadata);
+   }
+  //---------------------------------------------------------------
   void add_frame_pix_pubkey_to_tx_extra(std::vector<uint8_t>& tx_extra, const crypto::public_key& pubkey)
   {
     add_data_to_tx_extra(tx_extra, reinterpret_cast<const char *>(&pubkey), sizeof(pubkey), TX_EXTRA_TAG_FRAME_PIX_PUBKEY);
@@ -939,7 +949,7 @@ namespace cryptonote
    }
   //---------------------------------------------------------
   // Add encrypted addresses to tx_extra
-  bool add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, const nft_metadata& metadata) {
+ /* bool add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, const nft_metadata& metadata) {
     if (metadata.nft_name.empty() || metadata.nft_description.empty()) {
         // You might want to ensure all required fields are present here
         return false;
@@ -953,7 +963,7 @@ namespace cryptonote
     std::copy(serialized_metadata.begin(), serialized_metadata.end(), tx_extra.begin() + pos + 1);
 
     return true;
-   }
+   }*/
   //-------------------------------------------------------------
   // Extract encrypted address from tx_extra
   // Extract NFT metadata from tx_extra

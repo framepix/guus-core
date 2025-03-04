@@ -91,7 +91,8 @@ namespace cryptonote
   void add_tx_pub_key_to_extra(transaction& tx, const crypto::public_key& tx_pub_key);
   void add_tx_pub_key_to_extra(transaction_prefix& tx, const crypto::public_key& tx_pub_key);
   void add_tx_pub_key_to_extra(std::vector<uint8_t>& tx_extra, const crypto::public_key& tx_pub_key);
-
+  void add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, nft_metadata& nft_metadata);
+  void add_tx_extra(std::vector<uint8_t>& extra,  tx_extra_nft_metadata& nft_metadata);
   bool add_frame_pix_state_change_to_tx_extra(std::vector<uint8_t>& tx_extra, const tx_extra_frame_pix_state_change& state_change, uint8_t hf_version);
   bool get_frame_pix_state_change_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_frame_pix_state_change& state_change, uint8_t hf_version);
   bool get_frame_pix_register_from_tx_extra(const std::vector<uint8_t>& tx_extra, tx_extra_frame_pix_register& registration);
@@ -127,6 +128,7 @@ namespace cryptonote
   bool add_burned_amount_to_tx_extra(std::vector<uint8_t>& tx_extra, uint64_t burn);
   uint64_t get_burned_amount_from_tx_extra(const std::vector<uint8_t>& tx_extra);
   bool is_out_to_acc(const account_keys& acc, const txout_to_key& out_key, const crypto::public_key& tx_pub_key, const std::vector<crypto::public_key>& additional_tx_public_keys, size_t output_index);
+
   struct subaddress_receive_info
   {
     subaddress_index index;
@@ -174,7 +176,7 @@ namespace cryptonote
   std::string encrypt_address(const std::string& address, const crypto::secret_key& secret_key);
   std::string decrypt_address(const std::string& encrypted_address, const crypto::secret_key& secret_key);
   bool get_nft_metadata_from_tx_extra(const std::vector<uint8_t>& tx_extra, nft_metadata& metadata);
-  bool add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, const nft_metadata& metadata);
+  //bool add_nft_metadata_to_tx_extra(std::vector<uint8_t>& tx_extra, const nft_metadata& metadata);
 
   bool check_money_overflow(const transaction& tx);
   bool check_outs_overflow(const transaction& tx);

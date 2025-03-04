@@ -977,15 +977,11 @@ private:
     bool load_tx(const std::string &signed_filename, std::vector<tools::wallet2::pending_tx> &ptx, std::function<bool(const signed_tx_set&)> accept_func = NULL);
     bool parse_tx_from_str(const std::string &signed_tx_st, std::vector<tools::wallet2::pending_tx> &ptx, std::function<bool(const signed_tx_set &)> accept_func);
     std::vector<wallet2::pending_tx> create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra_base, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices, cryptonote::guus_construct_tx_params &tx_params);
-    std::vector<wallet2::pending_tx> create_transactions_nft(
-    const cryptonote::tx_destination_entry &recipient,  
-    const uint64_t unlock_time, 
-    uint32_t priority, 
-    const std::vector<uint8_t>& extra_base, 
-    uint32_t subaddr_account, 
-    std::set<uint32_t> subaddr_indices,
-    const cryptonote::tx_extra_nft_metadata &nft_metadata
-    );
+
+    std::vector<pending_tx> create_transactions_nft(
+    const cryptonote::tx_destination_entry& dst, const size_t fake_outs_count, const uint64_t unlock_time,
+    uint32_t priority, const std::set<uint32_t>& subaddr_indices, uint32_t subaddr_account,
+    cryptonote::tx_extra_nft_metadata& nft_metadata);
 
     void transfer_selected_rct_nft(
     const cryptonote::tx_destination_entry &recipient, 

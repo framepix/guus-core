@@ -6054,20 +6054,31 @@ bool simple_wallet::transfer(const std::vector<std::string> &args_)
   return transfer_main(Transfer::Normal, args_, false);
 }
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::create_nft(const std::vector<std::string>& args) {
-    if (args.size() < 4) {
-        fail_msg_writer() << "Usage: create_nft <name> <description> <utility_data> <png_filename>";
-        return false;
+bool simple_wallet::create_nft(const std::vector<std::string>& args_) {
+    // Pre-flight checks
+    if (m_wallet->key_on_device()) {
+        fail_msg_writer() << tr("This command is not supported by hardware wallets");
+        return true; // Return true to indicate command completed (albeit with failure)
+    }
+    if (!try_connect_to_daemon()) {
+        fail_msg_writer() << tr("Cannot connect to daemon");
+        return true;
     }
 
-    std::string name = args[0];
+    // Validate arguments
+    if (args_.size() < 4) {
+        fail_msg_writer() << tr("Usage: create_nft <name> <description> <utility_data> <png_filename>");
+        return true;
+    }
+
+    std::string name = args_[0];
     std::string description;
-    for (size_t i = 1; i < args.size() - 2; ++i) {
-        description += args[i] + " ";
+    for (size_t i = 1; i < args_.size() - 2; ++i) {
+        description += args_[i] + " ";
     }
     description = description.substr(0, description.size() - 1); // Trim trailing space
-    std::string utility_data = args[args.size() - 2];
-    std::string png_filename = args[args.size() - 1];
+    std::string utility_data = args_[args_.size() - 2];
+    std::string png_filename = args_[args_.size() - 1];
 
     // Define paths
     fs::path home(getenv("HOME"));
@@ -6077,57 +6088,53 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
     sqlite3* db = nullptr;
     int rc = sqlite3_open(db_path.string().c_str(), &db);
     if (rc) {
-        fail_msg_writer() << "Cannot open database: " << sqlite3_errmsg(db);
+        fail_msg_writer() << tr("Cannot open database: ") << sqlite3_errmsg(db);
         sqlite3_close(db);
-        return false;
+        return true;
     }
 
     try {
-        // Check if PNG file exists
+        // Check PNG file existence
         if (!fs::exists(png_path)) {
             throw std::runtime_error("PNG file '" + png_filename + "' does not exist in ~/.Bitguus/.");
         }
 
         // Load PNG image
         std::vector<uint8_t> png_data;
-        std::ifstream file(png_path, std::ios::binary | std::ios::ate);
-        if (!file.is_open()) {
-            throw std::runtime_error("Unable to open PNG file: " + png_filename);
+        {
+            std::ifstream file(png_path, std::ios::binary | std::ios::ate);
+            if (!file.is_open()) {
+                throw std::runtime_error("Unable to open PNG file: " + png_filename);
+            }
+            std::streamsize size = file.tellg();
+            file.seekg(0, std::ios::beg);
+            png_data.resize(static_cast<size_t>(size));
+            if (!file.read(reinterpret_cast<char*>(png_data.data()), size)) {
+                throw std::runtime_error("Error reading PNG file: " + png_filename);
+            }
         }
-        std::streamsize size = file.tellg();
-        file.seekg(0, std::ios::beg);
-        png_data.resize(size);
-        if (!file.read(reinterpret_cast<char*>(png_data.data()), size)) {
-            throw std::runtime_error("Error reading PNG file");
-        }
-        file.close();
 
-        // Resize PNG using Cairo (resize to 128x128 for consistency)
+        // Resize PNG (consistent 128x128)
         std::vector<uint8_t> resized_png = resize_png(png_data, 128, 128);
         if (resized_png.empty()) {
-            throw std::runtime_error("Failed to resize PNG.");
+            throw std::runtime_error("Failed to resize PNG image");
         }
 
-        // Generate NFT ID
+        // Generate unique NFT ID
         std::mt19937_64 gen(std::random_device{}());
         std::uniform_int_distribution<uint64_t> dis(1, UINT64_MAX);
         uint64_t nft_id = dis(gen);
 
-        // Get encrypted address
+        // Prepare wallet data
         std::string address_str = m_wallet->get_address_as_str();
         std::vector<uint8_t> encrypted_address(address_str.begin(), address_str.end());
-
         uint64_t block_height = m_wallet->get_blockchain_current_height();
-
-        // Compute image hash
         crypto::hash image_hash = crypto::cn_fast_hash(resized_png.data(), resized_png.size());
 
-        // Store NFT in SQLite database (image_data is **only** stored in `nft.db`)
-        create_nft_with_address(
-            db, name, description, nft_id, encrypted_address, utility_data,  image_hash, block_height
-        );
+        // Store NFT in local database (image data included)
+        create_nft_with_address(db, name, description, nft_id, encrypted_address, utility_data, image_hash, block_height);
 
-        // Prepare NFT metadata for blockchain transaction (without `image_data`)
+        // Prepare NFT metadata for transaction (hash only)
         tx_extra_nft_metadata nft_metadata;
         nft_metadata.metadata.nft_name = name;
         nft_metadata.metadata.nft_description = description;
@@ -6137,28 +6144,37 @@ bool simple_wallet::create_nft(const std::vector<std::string>& args) {
         nft_metadata.metadata.image_hash = image_hash;
         nft_metadata.metadata.block_height = block_height;
 
-        // Prepare recipient
-        cryptonote::tx_destination_entry recipient(0, m_wallet->get_address(), false);
+        // Define recipient (self-send with minimal amount)
+    cryptonote::tx_destination_entry recipient(0, m_wallet->get_address(), false); // Amount set in function
+    std::vector<tools::wallet2::pending_tx> ptx_vector = m_wallet->create_transactions_nft(
+    recipient, 0, 0, 0, {}, 0, nft_metadata
+       );
+        if (ptx_vector.empty()) {
+            throw std::runtime_error("Failed to create NFT transaction: No transactions generated");
+        }
 
-        // Create NFT transaction
-        auto ptx_vector = m_wallet->create_transactions_nft(
-            recipient, 0, 0, {}, m_wallet->get_num_subaddress_accounts(), {}, nft_metadata
-        );
+        // Log transaction details for debugging
+        std::string tx_blob = cryptonote::tx_to_blob(ptx_vector[0].tx);
+        MDEBUG("NFT transaction created for " << name << " (ID: " << nft_id << ")");
+        MDEBUG("TX size: " << tx_blob.size() << " bytes, hash: " << epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx)));
 
-        // Submit transaction
-       try {
-         m_wallet->commit_tx(ptx_vector, 0); // Commit the transaction
-       } catch (const std::exception &e) {
-        throw std::runtime_error(std::string("Failed to send NFT transaction: ") + e.what());
-     }
+        // Commit the transaction
+        m_wallet->commit_tx(ptx_vector, false); // No blink, submit directly
 
-
-        success_msg_writer() << "NFT created successfully: " << name << " (ID: " << nft_id << ")";
-        success_msg_writer() << "Image Hash: " << epee::string_tools::pod_to_hex(image_hash);
-    } catch (const std::exception& e) {
-        fail_msg_writer() << "Error creating NFT: " << e.what();
+        success_msg_writer() << tr("NFT created successfully: ") << name << " (ID: " << nft_id << ")";
+        success_msg_writer() << tr("Image Hash (on blockchain): ") << epee::string_tools::pod_to_hex(image_hash);
+        success_msg_writer() << tr("Image data stored in nft.db, size: ") << resized_png.size() << " bytes";
+    }
+    catch (const std::exception& e) {
+        handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
         sqlite3_close(db);
-        return false;
+        return true;
+    }
+    catch (...) {
+        LOG_ERROR("Unknown error in create_nft");
+        fail_msg_writer() << tr("Unknown error creating NFT");
+        sqlite3_close(db);
+        return true;
     }
 
     sqlite3_close(db);
